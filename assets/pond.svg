@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" role="img" aria-label="Simple fishpond illustration">
+  <defs>
+    <linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#155e75"/>
+      <stop offset="1" stop-color="#0b3540"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="200" fill="url(#water)"/>
+  <!-- sun glint -->
+  <circle cx="362" cy="30" r="12" fill="#fde68a" opacity="0.85"/>
+  <circle cx="362" cy="30" r="20" fill="#fde68a" opacity="0.18"/>
+  <!-- ripples -->
+  <g fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.28">
+    <path d="M40 70 q25 -10 50 0 t50 0"/>
+    <path d="M250 110 q25 -10 50 0 t50 0"/>
+    <path d="M120 150 q25 -10 50 0 t50 0"/>
+  </g>
+  <!-- reeds, top corners -->
+  <g stroke="#34d399" stroke-width="5" stroke-linecap="round">
+    <path d="M18 0 C 22 22, 16 38, 24 52"/>
+    <path d="M36 0 C 36 24, 44 36, 40 54"/>
+    <path d="M382 0 C 378 22, 384 38, 376 52"/>
+  </g>
+  <g fill="#a16207">
+    <ellipse cx="24" cy="58" rx="5" ry="9"/>
+    <ellipse cx="40" cy="60" rx="5" ry="9"/>
+    <ellipse cx="376" cy="58" rx="5" ry="9"/>
+  </g>
+  <!-- lily pads -->
+  <g>
+    <path d="M268 74 a26 26 0 1 0 18 7 L268 74 Z" fill="#10b981"/>
+    <circle cx="283" cy="66" r="5" fill="#f9a8d4"/>
+    <path d="M95 120 a20 20 0 1 1 -14 6 L95 120 Z" fill="#34d399"/>
+  </g>
+  <!-- fish -->
+  <g>
+    <ellipse cx="150" cy="88" rx="30" ry="14" fill="#fbbf24"/>
+    <polygon points="180,88 202,74 202,102" fill="#f59e0b"/>
+    <circle cx="140" cy="85" r="3" fill="#06251c"/>
+    <ellipse cx="248" cy="148" rx="27" ry="12" fill="#fb923c"/>
+    <polygon points="221,148 201,136 201,160" fill="#ea580c"/>
+    <circle cx="259" cy="145" r="2.5" fill="#06251c"/>
+  </g>
+  <!-- bubbles -->
+  <g fill="#ffffff" opacity="0.35">
+    <circle cx="120" cy="60" r="4"/>
+    <circle cx="132" cy="46" r="3"/>
+    <circle cx="272" cy="120" r="3.5"/>
+  </g>
+</svg>
