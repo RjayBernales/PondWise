@@ -224,6 +224,8 @@
             </label>
             <button type="submit">Add this pond</button>
           </form>
+          <p class="hint" id="pondLimitNote"></p>
+          <button class="btn-ghost btn-small" id="pondUpgradeBtn" onclick="showSection('plans')" hidden>View plans to add more</button>
         </div>
         <div class="panel">
           <div class="panel-head">
@@ -286,6 +288,35 @@
           </div>
         </div>
       </div>
+      <div class="stack feed-extra">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Standard feeds</h3>
+            <span class="hint">Matched by fish size</span>
+          </div>
+          <div class="table-wrap">
+            <table class="feed-table">
+              <thead>
+                <tr><th scope="col">Fish size</th><th scope="col">Feed</th><th scope="col">Protein</th><th scope="col">Rate/day</th><th scope="col">Meals</th></tr>
+              </thead>
+              <tbody id="feedGuideBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel" id="rationPanel">
+          <div class="panel-head">
+            <h3>Daily rations by pond</h3>
+            <span class="hint">From each pond's population</span>
+          </div>
+          <div id="rationList"></div>
+        </div>
+        <div class="lock-panel" id="rationLock" hidden>
+          <span class="lock-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+          <h3>Pond rations need PondPro</h3>
+          <p>Automatic daily rations from each pond's population unlock with PondPro or PondElite.</p>
+          <button onclick="showSection('plans')">View plans</button>
+        </div>
+      </div>
     </section>
 
     <!-- TASKS -->
@@ -297,11 +328,28 @@
         </div>
       </div>
       <div class="grid-main">
+        <div class="stack">
+        <div class="panel">
+          <div class="panel-head">
+            <h3 id="calLabel">Calendar</h3>
+            <div class="cal-nav">
+              <button class="btn-ghost btn-small" onclick="calMove(-1)" aria-label="Previous month">‹ Prev</button>
+              <button class="btn-ghost btn-small" onclick="calToday()">Today</button>
+              <button class="btn-ghost btn-small" onclick="calMove(1)" aria-label="Next month">Next ›</button>
+            </div>
+          </div>
+          <div class="cal-grid cal-week" aria-hidden="true">
+            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+          </div>
+          <div class="cal-grid" id="calGrid" role="grid" aria-label="Task calendar"></div>
+          <p class="hint" id="calHint">Tap a date to add a task on that day.</p>
+        </div>
         <div class="panel">
           <div class="panel-head">
             <h3>Tasks</h3>
           </div>
           <ul id="taskList"></ul>
+        </div>
         </div>
         <div class="rail">
           <div class="panel">
@@ -432,6 +480,7 @@
         <span id="financeFor">No pond picked yet.</span>
         <button class="btn-ghost btn-small" onclick="showSection('ponds')">Change pond</button>
       </div>
+      <div id="financeBody">
       <div class="money-cards" role="status" aria-live="polite">
         <div class="money-card">
           <p class="kpi-label">Money out (you paid)</p>
@@ -489,6 +538,13 @@
           <h4>List of money you got</h4>
           <ul id="saleList"></ul>
         </div>
+      </div>
+      </div>
+      <div class="lock-panel" id="financeLock" hidden>
+        <span class="lock-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+        <h3>Money tracking needs PondPro</h3>
+        <p>Record expenses and sales, and see profit per pond, with PondPro or PondElite.</p>
+        <button onclick="showSection('plans')">View plans</button>
       </div>
     </section>
 
@@ -609,7 +665,7 @@
             <h4>WHY use it?</h4>
             <p class="hint">So you do not forget feeding, you spot sick water early, and you know if you earned or lost money.</p>
             <h4>WHERE is what?</h4>
-            <p class="hint">Ponds = your ponds. Feed = food calculator. Tasks = things to do. Records = daily notes. Money = money in and out. Plans = subscription options. Helper (here) = ask questions.</p>
+            <p class="hint">Ponds = your ponds. Feed = food calculator. Tasks = things to do and calendar. Records = daily notes. Money = money in and out. Plans = subscription options. Helper (here) = ask questions.</p>
             <h4>HOW do I start? (4 steps)</h4>
             <ol class="howto">
               <li>Go to <strong>Ponds</strong>. Add your pond. Tap its card to pick it.</li>
@@ -623,11 +679,19 @@
             <div class="panel-head">
               <h3>Backup</h3>
             </div>
-            <p class="hint">Save a copy of your notes. Keep it safe.</p>
-            <button onclick="exportData()">Download backup</button>
-            <label for="importFile">Bring back a backup:
-              <input type="file" id="importFile" accept=".json" onchange="importData(event)">
-            </label>
+            <div id="backupBody">
+              <p class="hint">Save a copy of your notes. Keep it safe.</p>
+              <button onclick="exportData()">Download backup</button>
+              <label for="importFile">Bring back a backup:
+                <input type="file" id="importFile" accept=".json" onchange="importData(event)">
+              </label>
+            </div>
+            <div class="lock-panel lock-inline" id="backupLock" hidden>
+              <span class="lock-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>
+              <h3>Backup needs PondElite</h3>
+              <p>Download and restore backups with PondElite.</p>
+              <button onclick="showSection('plans')">View plans</button>
+            </div>
             <button class="btn-ghost" onclick="loadDemo()">Load demo data</button>
           </div>
         </div>

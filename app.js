@@ -58,6 +58,35 @@ function calcFeedKg(count, avgWeightG, ratePercent) {
   return biomassKg * (ratePercent / 100);
 }
 
+// Standard feed program by fish size (proposal for common pond species).
+// Single source of truth: the Feed tab guide table renders from this.
+var FEED_STAGES = [
+  { minG: 0, maxG: 5, size: "0-5 g (fry)", feed: "Fry mash", protein: "40%", rate: 10, meals: "4-5" },
+  { minG: 5, maxG: 20, size: "5-20 g (fingerling)", feed: "Starter crumble", protein: "35%", rate: 7, meals: "3-4" },
+  { minG: 20, maxG: 100, size: "20-100 g (juvenile)", feed: "Grower pellet 2 mm", protein: "30%", rate: 5, meals: "3" },
+  { minG: 100, maxG: 250, size: "100-250 g (grow-out)", feed: "Grower pellet 3 mm", protein: "28%", rate: 3, meals: "2-3" },
+  { minG: 250, maxG: null, size: "250 g+ (finisher)", feed: "Finisher pellet 4 mm", protein: "25%", rate: 2.5, meals: "2" }
+];
+
+function recommendFeed(avgWeightG) {
+  var w = Number(avgWeightG);
+  if (!w || w <= 0) return null;
+  var i;
+  for (i = 0; i < FEED_STAGES.length; i++) {
+    var s = FEED_STAGES[i];
+    if (w >= s.minG && (s.maxG === null || w < s.maxG)) return s;
+  }
+  return FEED_STAGES[FEED_STAGES.length - 1];
+}
+
+// Daily ration for one pond's population: { stage, kg } or null.
+function pondDailyRation(count, avgWeightG) {
+  var n = Number(count);
+  var stage = recommendFeed(avgWeightG);
+  if (!n || n <= 0 || !stage) return null;
+  return { stage: stage, kg: calcFeedKg(n, Number(avgWeightG), stage.rate) };
+}
+
 function calcTotals(expenses, sales, pondId) {
   var exp = 0;
   var sal = 0;
@@ -138,7 +167,7 @@ function showSection(name) {
     bar[i].classList.toggle("active", bar[i].getAttribute("data-section") === name);
   }
   // Deep link: the URL hash remembers the open section.
-  if (window.location.hash !== "#" + name) window.location.hash = name;
+  if (window.location.hash !== "#" + name) window.location.hash = "#" + name;
   refresh();
 }
 
@@ -147,6 +176,10 @@ function showSection(name) {
 function addPond(event) {
   event.preventDefault();
   var state = loadData();
+  if (state.ponds.length >= pondLimit()) {
+    renderPondNote(state, true);
+    return false;
+  }
   var pond = {
     id: makeId(),
     name: document.getElementById("pondName").value.trim(),
@@ -343,6 +376,58 @@ function deleteTask(id) {
   refresh();
 }
 
+// ---------- 6b. Calendar ----------
+
+var calCursor = null;   // { y, m } month on display (m is 0-based)
+var calSelected = null; // yyyy-mm-dd picked day
+
+function calEnsure() {
+  if (!calCursor) {
+    var d = new Date();
+    calCursor = { y: d.getFullYear(), m: d.getMonth() };
+  }
+  if (!calSelected) calSelected = todayStr();
+}
+
+function pad2(n) {
+  return (n < 10 ? "0" : "") + n;
+}
+
+function ymd(y, m, d) {
+  var dt = new Date(y, m, d);
+  return dt.getFullYear() + "-" + pad2(dt.getMonth() + 1) + "-" + pad2(dt.getDate());
+}
+
+function calMove(dir) {
+  calEnsure();
+  var dt = new Date(calCursor.y, calCursor.m + dir, 1);
+  calCursor = { y: dt.getFullYear(), m: dt.getMonth() };
+  refresh();
+}
+
+function calToday() {
+  var d = new Date();
+  calCursor = { y: d.getFullYear(), m: d.getMonth() };
+  calSelected = todayStr();
+  var el = document.getElementById("taskDate");
+  if (el) el.value = calSelected;
+  refresh();
+}
+
+// Picking a day fills the add-task date so the task lands on that day.
+function calPick(dateStr) {
+  var parts = dateStr.split("-");
+  calCursor = { y: Number(parts[0]), m: Number(parts[1]) - 1 };
+  calSelected = dateStr;
+  var el = document.getElementById("taskDate");
+  if (el) el.value = dateStr;
+  refresh();
+}
+
+function tasksOn(tasks, dateStr) {
+  return tasks.filter(function (t) { return t.date === dateStr; });
+}
+
 // ---------- 7. Records ----------
 
 function needPond(state) {
@@ -442,6 +527,7 @@ function addExpense(event) {
   event.preventDefault();
   var state = loadData();
   if (needPond(state)) return false;
+  if (!canUseMoney()) { showSection("plans"); return false; }
   var item = document.getElementById("expItem").value.trim();
   var amount = document.getElementById("expAmount").value;
   state.expenses.push({
@@ -462,6 +548,7 @@ function addSale(event) {
   event.preventDefault();
   var state = loadData();
   if (needPond(state)) return false;
+  if (!canUseMoney()) { showSection("plans"); return false; }
   var item = document.getElementById("saleItem").value.trim();
   var amount = document.getElementById("saleAmount").value;
   state.sales.push({
@@ -612,8 +699,9 @@ function botReply(question) {
   }
   // Generic "where" goes after topic branches so "Where is my profit?" gets money.
   if (q.indexOf("where") >= 0) {
-    return "WHERE: Ponds = your ponds. Feed = food calculator. Tasks = things to do. " +
-      "Records = daily notes. Money = money in and out. You are now in Helper - ask me anything about those.";
+    return "WHERE: Ponds = your ponds. Feed = food calculator. Tasks = things to do and calendar. " +
+      "Records = daily notes. Money = money in and out. Plans = subscription options. " +
+      "You are now in Helper - ask me anything about those.";
   }
   if (q.indexOf("record") >= 0 || q.indexOf("log") >= 0 || q.indexOf("note") >= 0) {
     return "To write a daily note: open Records. Pick 1 box: 1 Food given, 2 Water check, 3 Fish health, 4 Work done. " +
@@ -704,6 +792,7 @@ function showAdvice() {
 // ---------- 10. Backup + demo ----------
 
 function exportData() {
+  if (!canUseBackup()) { showSection("plans"); return; }
   var blob = new Blob([localStorage.getItem(STORE_KEY) || "{}"], { type: "application/json" });
   var a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -712,6 +801,7 @@ function exportData() {
 }
 
 function importData(event) {
+  if (!canUseBackup()) { showSection("plans"); return; }
   var file = event.target.files[0];
   if (!file) return;
   var reader = new FileReader();
@@ -811,6 +901,9 @@ function refresh() {
   renderPondPicker(state);
   renderPonds(state);
   renderTasks(state);
+  renderCalendar(state);
+  renderFeedGuide();
+  renderRations(state);
   renderRecords(state);
   renderFinance(state);
   renderDashboard(state);
@@ -822,6 +915,7 @@ function refresh() {
 
 var PLAN_KEY = "pondwise_plan";
 var PLAN_NAMES = { start: "PondStart (free)", pro: "PondPro", elite: "PondElite" };
+var POND_LIMITS = { start: 1, pro: 5, elite: Infinity };
 
 function getPlan() {
   try {
@@ -831,13 +925,40 @@ function getPlan() {
   }
 }
 
+// Tier gates. Pond limits block addPond; money, rations, and backup swap
+// their panels for an upgrade lock (renderPlan) and refuse saves too.
+function pondLimit() {
+  var p = getPlan();
+  return POND_LIMITS[p] == null ? 1 : POND_LIMITS[p];
+}
+
+function canUseMoney() {
+  var p = getPlan();
+  return p === "pro" || p === "elite";
+}
+
+function canUseRations() {
+  return canUseMoney();
+}
+
+function canUseBackup() {
+  return getPlan() === "elite";
+}
+
 function choosePlan(name) {
   try {
     localStorage.setItem(PLAN_KEY, name);
   } catch (e) {
     // Private mode: choice just won't persist.
   }
-  renderPlan();
+  refresh();
+}
+
+function setLocked(bodyId, lockId, allowed) {
+  var body = document.getElementById(bodyId);
+  var lock = document.getElementById(lockId);
+  if (body) body.hidden = !allowed;
+  if (lock) lock.hidden = allowed;
 }
 
 function renderPlan() {
@@ -852,6 +973,156 @@ function renderPlan() {
     btns[i].disabled = isCurrent;
     btns[i].textContent = isCurrent ? "Current plan" : "Choose " + btns[i].getAttribute("data-label");
   }
+  setLocked("financeBody", "financeLock", canUseMoney());
+  setLocked("rationPanel", "rationLock", canUseRations());
+  setLocked("backupBody", "backupLock", canUseBackup());
+}
+
+// Pond usage note under the add-pond form. Existing ponds always stay;
+// the limit only blocks adding more (downgrades included).
+function renderPondNote(state, blocked) {
+  var note = document.getElementById("pondLimitNote");
+  var btn = document.getElementById("pondUpgradeBtn");
+  if (!note) return;
+  var plan = getPlan();
+  var limit = pondLimit();
+  var name = PLAN_NAMES[plan] || PLAN_NAMES.start;
+  var maxed = state.ponds.length >= limit;
+  if (blocked) {
+    note.textContent = "Limit reached: " + name + " allows " + limit +
+      " pond" + (limit === 1 ? "" : "s") + ". Upgrade to add more.";
+  } else if (limit === Infinity) {
+    note.textContent = "Using " + state.ponds.length + " ponds (" + name + " - unlimited).";
+  } else {
+    note.textContent = "Using " + state.ponds.length + " of " + limit + " ponds (" + name + ")." +
+      (maxed ? " Upgrade to add more." : "");
+  }
+  if (btn) btn.hidden = !maxed;
+}
+
+function renderCalendar(state) {
+  calEnsure();
+  var label = document.getElementById("calLabel");
+  var grid = document.getElementById("calGrid");
+  if (!label || !grid) return;
+  var y = calCursor.y;
+  var m = calCursor.m;
+  label.textContent = new Date(y, m, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  grid.innerHTML = "";
+  var first = new Date(y, m, 1).getDay();
+  var days = new Date(y, m + 1, 0).getDate();
+  var prevDays = new Date(y, m, 0).getDate();
+  var today = todayStr();
+  var tasks = state.tasks.filter(function (t) { return t.pondId === state.activePondId; });
+  var i, d, dateStr, inMonth;
+  for (i = 0; i < 42; i++) {
+    if (i < first) {
+      d = prevDays - first + 1 + i;
+      inMonth = false;
+      dateStr = ymd(y, m - 1, d);
+    } else if (i < first + days) {
+      d = i - first + 1;
+      inMonth = true;
+      dateStr = ymd(y, m, d);
+    } else {
+      d = i - first - days + 1;
+      inMonth = false;
+      dateStr = ymd(y, m + 1, d);
+    }
+    grid.appendChild(calCell(dateStr, d, inMonth, dateStr === today, dateStr === calSelected, tasksOn(tasks, dateStr)));
+  }
+  var hint = document.getElementById("calHint");
+  if (hint) hint.textContent = "Adding tasks for " + calSelected + ". Tap another date to change it.";
+}
+
+function calCell(dateStr, dayNum, inMonth, isToday, isSel, dayTasks) {
+  var b = document.createElement("button");
+  b.type = "button";
+  b.className = "cal-day" + (inMonth ? "" : " dim") + (isToday ? " today" : "") + (isSel ? " sel" : "");
+  b.setAttribute("aria-label", dateStr + (dayTasks.length ? (", " + dayTasks.length + " tasks") : ", no tasks"));
+  b.onclick = function () { calPick(dateStr); };
+  var num = document.createElement("span");
+  num.className = "cal-num";
+  num.textContent = String(dayNum);
+  b.appendChild(num);
+  var dots = document.createElement("span");
+  dots.className = "cal-dots";
+  dots.setAttribute("aria-hidden", "true");
+  dayTasks.slice(0, 3).forEach(function (t) {
+    var s = document.createElement("i");
+    s.className = t.done ? "cal-dot done" : "cal-dot todo";
+    dots.appendChild(s);
+  });
+  if (dayTasks.length > 3) {
+    var more = document.createElement("em");
+    more.textContent = "+" + (dayTasks.length - 3);
+    dots.appendChild(more);
+  }
+  b.appendChild(dots);
+  return b;
+}
+
+function renderFeedGuide() {
+  var body = document.getElementById("feedGuideBody");
+  if (!body) return;
+  body.innerHTML = "";
+  FEED_STAGES.forEach(function (s) {
+    var tr = document.createElement("tr");
+    var cells = [
+      { text: s.size, num: false },
+      { text: s.feed, num: false },
+      { text: s.protein, num: true },
+      { text: s.rate + "%", num: true },
+      { text: s.meals, num: true }
+    ];
+    cells.forEach(function (c) {
+      var td = document.createElement("td");
+      td.textContent = c.text;
+      if (c.num) td.className = "num";
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+function renderRations(state) {
+  var box = document.getElementById("rationList");
+  if (!box) return;
+  box.innerHTML = "";
+  if (!state.ponds.length) {
+    box.innerHTML = "<p class='hint'>No ponds yet. Add one in Ponds first.</p>";
+    return;
+  }
+  state.ponds.forEach(function (p) {
+    var row = document.createElement("div");
+    row.className = "ration-row";
+    var r = (p.stock.count && p.stock.avgWeightG) ? pondDailyRation(p.stock.count, p.stock.avgWeightG) : null;
+    var left = document.createElement("div");
+    left.className = "ration-pond";
+    var nm = document.createElement("strong");
+    nm.textContent = p.name;
+    var pop = document.createElement("small");
+    pop.textContent = p.stock.count ? (p.stock.count + " fish x " + p.stock.avgWeightG + " g") : "No fish saved yet";
+    left.appendChild(nm);
+    left.appendChild(pop);
+    var right = document.createElement("div");
+    right.className = "ration-val";
+    if (r) {
+      var amt = document.createElement("strong");
+      amt.textContent = r.kg.toFixed(2) + " kg/day";
+      var feed = document.createElement("small");
+      feed.textContent = r.stage.feed + " - " + r.stage.meals + " meals";
+      right.appendChild(amt);
+      right.appendChild(feed);
+    } else {
+      var none = document.createElement("small");
+      none.textContent = "Save fish in Ponds to see its ration";
+      right.appendChild(none);
+    }
+    row.appendChild(left);
+    row.appendChild(right);
+    box.appendChild(row);
+  });
 }
 
 function fillPondSelect(elId, state) {
@@ -945,6 +1216,7 @@ function renderPonds(state) {
   } else if (stockFor) {
     stockFor.textContent = "Pick a pond card first.";
   }
+  renderPondNote(state, false);
 }
 
 function setDefaultDates() {
@@ -1257,6 +1529,8 @@ if (typeof module !== "undefined") {
   module.exports = {
     calcFeedKg: calcFeedKg, calcTotals: calcTotals, buildAdvice: buildAdvice,
     getUpcomingTasks: getUpcomingTasks, getTodaySchedule: getTodaySchedule,
+    recommendFeed: recommendFeed, pondDailyRation: pondDailyRation,
+    tasksOn: tasksOn, ymd: ymd,
     isOnTopic: (typeof isOnTopic !== "undefined" ? isOnTopic : null)
   };
 }

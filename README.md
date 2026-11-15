@@ -9,7 +9,7 @@ Open `index.html` in any browser. Data stays in that browser (localStorage).
 ## Files (read in this order)
 
 1. `index.html` - all screens as simple sections
-2. `styles.css` - dark LPMAS-style monitor theme, flat panels, two breakpoints
+2. `styles.css` - light theme (white panels, navy sidebar/ink, sky-blue actions), calm 500/600 type, thin borders, three breakpoints
 3. `species-data.js` - built-in species list + `suggestRateByWeight()`
 4. `app.js` - plain functions: storage, ponds, feed, tasks, records, finance, plans, guide
 5. `assets/` - logo files (`logo.svg` in sidebar + favicon, `logo.png`, original `logo.jpeg`) and `reference/` screenshots
@@ -37,10 +37,11 @@ Helper tab -> Download backup (JSON). Restore with the file picker.
 - Dashboard on mobile: greeting + date, tasks bell with due-count badge, pond avatar, pond switcher, active-pond and tasks-today cards, Quick Access row, Overview stats, Today's Schedule, help card
 - Bottom tab bar on mobile: Home, Tasks, + (daily records), Helper, Money
 - Ponds: small 3-column pond cards with pond art on top (tap to pick, delete), add-pond form, fish-stock form
-- Feed: species search (live FishBase API + offline built-in list, "Use" fills stock names), daily feed estimator, "use selected pond" fill
-- Tasks: grouped upcoming/done list, Done/Undo toggle, delete, add-task form
+- Feed: species search (live FishBase API + offline built-in list, "Use" fills stock names), daily feed estimator, "use selected pond" fill, standard-feeds guide table by fish size, per-pond daily rations from each pond's population (PondPro+)
+- Tasks: month calendar with per-day task dots (tap a day to fill the add-task date), grouped upcoming/done list, Done/Undo toggle, delete, add-task form
 - Records: food given, water check, fish health, work done - each with big Save button, example text, and Remove on saved rows
 - Money: money-out and money-in forms with plain words and examples, 3 summary boxes (paid, sold, left), plain-language profit line, Remove on saved rows
 - Plans: proposed PondStart (₱0) / PondElite (₱199, featured) / PondPro (₱99) tiers per `assets/reference/sub.jpg`, choice saved in browser
+- Tier enforcement: pond limits (Start 1, Pro 5, Elite unlimited, existing ponds always kept), Money tab needs Pro+, per-pond rations need Pro+, backup download/restore needs Elite - locked panels link to Plans
 - Helper: railguarded chatbot (PondWise topics only) with quick-question buttons, plain What/Why/Where/How guide, backup download/restore, load demo data
 - Everywhere: data auto-saves in the browser (localStorage), section deep-links via URL hash, demo data (3 stocked ponds) from Dashboard, Ponds, or Helper
