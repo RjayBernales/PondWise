@@ -1,1536 +1,356 @@
-// PondWise v1 - plain JS, no framework.
-// Read top to bottom: storage, ponds, feed, tasks, records, finance, guide.
-// Every function does one small thing.
-
-// ---------- 1. Storage ----------
-
-var STORE_KEY = "pondwise_v1";
-
-function blankState() {
-  return {
-    ponds: [],
-    activePondId: null,
-    tasks: [],
-    feedLogs: [],
-    waterLogs: [],
-    healthLogs: [],
-    maintLogs: [],
-    expenses: [],
-    sales: []
-  };
-}
-
-function loadData() {
-  try {
-    var raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return blankState();
-    return JSON.parse(raw);
-  } catch (e) {
-    return blankState();
+/* PondWise UI: no inline handlers, no framework, no build step. */
+(() => {
+  'use strict';
+  const D = PondDomain, S = PondStorage, $ = id => document.getElementById(id);
+  const titles = { overview: 'Overview', ponds: 'Ponds', tasks: 'Tasks', records: 'Records', money: 'Money', tools: 'Tools', settings: 'Help & settings', plans: 'Plan preview', more: 'More' };
+  const aliases = { dashboard: 'overview', feed: 'tools', finance: 'money', guide: 'settings', help: 'settings' };
+  const labels = { feedLogs: 'Feeding', waterLogs: 'Water', healthLogs: 'Fish health', maintLogs: 'Maintenance', expenses: 'Expense', sales: 'Income', tasks: 'Task' };
+  const now = () => new Date().toISOString();
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const clone = v => structuredClone(v);
+  let demo = false, store, state, opened, page = 'overview', drafts = {}, editing = null, recordType = 'feedLogs', moneyType = 'expenses', preview = null, restoreGeneration = 0, selectedDay = null, cursor = null, day = '', conflict = false;
+  const filters = { records: { scope: '', q: '', type: '', from: '', to: '', page: 1 }, money: { scope: '', q: '', type: '', from: '', to: '', page: 1 }, tasks: { scope: '', q: '', type: '', from: '', to: '', page: 1 } };
+  const browserStorage = { getItem: key => window.localStorage.getItem(key), setItem: (key, value) => window.localStorage.setItem(key, value), removeItem: key => window.localStorage.removeItem(key) };
+  let tier = 'start';
+  function planKey() { return demo ? 'pondwise_demo_plan' : 'pondwise_plan'; }
+  function openWorkspace(isDemo) {
+    demo = isDemo;
+    try { tier = D.plan(browserStorage.getItem(planKey())); } catch (_) { tier = 'start'; }
+    for (const f of Object.values(filters)) Object.assign(f, { scope: '', q: '', type: '', from: '', to: '', page: 1 });
+    store = new S.Store(browserStorage, demo); opened = store.open(); state = opened.state || D.blank(); conflict = false;
+    day = D.today(state.settings.timezone); selectedDay = day; cursor = day.slice(0, 7);
   }
-}
-
-function saveData(state) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(state));
-}
-
-// Simple unique id even for beginners to read.
-function makeId() {
-  return Date.now().toString() + Math.floor(Math.random() * 1000).toString();
-}
-
-function getActivePond(state) {
-  var i;
-  for (i = 0; i < state.ponds.length; i++) {
-    if (state.ponds[i].id === state.activePondId) return state.ponds[i];
+  function active() { return state.data.ponds.find(p => p.id === state.data.activePondId && !p.deletedAt && !p.archived); }
+  function pondName(id) { return state.data.ponds.find(p => p.id === id)?.name || 'Unknown pond'; }
+  function usable() { return !store.blocked && opened.status !== 'migration' && !conflict; }
+  function notify(message, error = false) { $('notice').textContent = message; $('notice').className = error ? 'error' : ''; $('notice').setAttribute('role', error ? 'alert' : 'status'); }
+  function button(label, action, data = '', cls = '') { return `<button type="button" class="${cls}" data-action="${action}" ${data}>${esc(label)}</button>`; }
+  function link(label, route, cls = 'button') { return `<a class="${cls}" href="#${route}">${esc(label)}</a>`; }
+  function head(title, sub = '') { return `<div class="page-head"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`; }
+  function empty(message = 'No records yet. Add a record to begin.') { return `<p class="empty">${esc(message)}</p>`; }
+  function amountText(cents) { const n = BigInt(cents); return `${n / 100n}.${String(n % 100n).padStart(2, '0')}`; }
+  function currency(cents) { const n = BigInt(cents), abs = n < 0n ? -n : n; const parts = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).formatToParts(abs / 100n); return (n < 0n ? '−' : '') + parts.map(p => p.type === 'fraction' ? String(abs % 100n).padStart(2, '0') : p.value).join(''); }
+  function feedText(p, override = null) {
+    const r = D.recommendation(p?.stock.count ?? null, p?.stock.avgWeightG ?? null, override);
+    if (r.kg === undefined) return empty(r.warnings[0]);
+    return `<p><strong>${r.kg.toFixed(2)} kg/day estimated</strong></p><p>${r.biomass.toFixed(2)} kg biomass × ${r.rate}% per day. ${esc(r.meals)} meals/day.</p><small>${esc(r.source)}; ${esc(r.stage)}. ${esc(r.warnings[0])}</small>`;
   }
-  return null;
-}
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-// ---------- 2. Pure calculations (no DOM, easy to test) ----------
-
-function calcFeedKg(count, avgWeightG, ratePercent) {
-  var biomassKg = (count * avgWeightG) / 1000;
-  return biomassKg * (ratePercent / 100);
-}
-
-// Standard feed program by fish size (proposal for common pond species).
-// Single source of truth: the Feed tab guide table renders from this.
-var FEED_STAGES = [
-  { minG: 0, maxG: 5, size: "0-5 g (fry)", feed: "Fry mash", protein: "40%", rate: 10, meals: "4-5" },
-  { minG: 5, maxG: 20, size: "5-20 g (fingerling)", feed: "Starter crumble", protein: "35%", rate: 7, meals: "3-4" },
-  { minG: 20, maxG: 100, size: "20-100 g (juvenile)", feed: "Grower pellet 2 mm", protein: "30%", rate: 5, meals: "3" },
-  { minG: 100, maxG: 250, size: "100-250 g (grow-out)", feed: "Grower pellet 3 mm", protein: "28%", rate: 3, meals: "2-3" },
-  { minG: 250, maxG: null, size: "250 g+ (finisher)", feed: "Finisher pellet 4 mm", protein: "25%", rate: 2.5, meals: "2" }
-];
-
-function recommendFeed(avgWeightG) {
-  var w = Number(avgWeightG);
-  if (!w || w <= 0) return null;
-  var i;
-  for (i = 0; i < FEED_STAGES.length; i++) {
-    var s = FEED_STAGES[i];
-    if (w >= s.minG && (s.maxG === null || w < s.maxG)) return s;
+  function waterText(w) {
+    if (!w) return empty('No measurement recorded. Add a water check.');
+    const stale = (new Date(day + 'T12:00:00Z') - new Date(w.date + 'T12:00:00Z')) / 86400000 > 7;
+    return `<p><strong>${esc(w.date)}${stale ? ' • More than 7 days old' : ''}</strong></p><p>pH: ${w.ph === null ? 'Not measured' : esc(w.ph)}<br>Temperature: ${w.temp === null ? 'Not measured' : esc(w.temp) + ' °C'}</p><p class="wrap">${esc(w.notes)}</p><small>Readings alone do not establish fish health. Recheck unusual readings and consult local aquaculture support before treatment.</small>`;
   }
-  return FEED_STAGES[FEED_STAGES.length - 1];
-}
-
-// Daily ration for one pond's population: { stage, kg } or null.
-function pondDailyRation(count, avgWeightG) {
-  var n = Number(count);
-  var stage = recommendFeed(avgWeightG);
-  if (!n || n <= 0 || !stage) return null;
-  return { stage: stage, kg: calcFeedKg(n, Number(avgWeightG), stage.rate) };
-}
-
-function calcTotals(expenses, sales, pondId) {
-  var exp = 0;
-  var sal = 0;
-  var i;
-  for (i = 0; i < expenses.length; i++) {
-    if (!pondId || expenses[i].pondId === pondId) exp += Number(expenses[i].amount);
+  function nav() {
+    $('desktopNav').innerHTML = Object.entries(titles).filter(([k]) => k !== 'more').map(([k, v]) => `<a href="#${k}" ${page === k ? 'aria-current="page"' : ''}>${v}</a>`).join('');
+    $('mobileNav').innerHTML = [['overview', 'Home'], ['ponds', 'Ponds'], ['tasks', 'Tasks'], ['records', 'Records'], ['more', 'More']].map(([k, v]) => `<a href="#${k}" ${(page === k || (k === 'more' && ['money', 'tools', 'settings', 'plans'].includes(page))) ? 'aria-current="page"' : ''}>${v}</a>`).join('');
+    const available = state.data.ponds.filter(p => !p.archived && !p.deletedAt);
+    $('pondContext').innerHTML = available.length ? available.map(p => `<option value="${esc(p.id)}" ${p.id === state.data.activePondId ? 'selected' : ''}>${esc(p.name)}</option>`).join('') : '<option value="">No active ponds</option>';
+    $('pondContext').disabled = !usable() || !available.length;
+    $('workspaceBanner').hidden = usable() && !demo;
+    let banner = '';
+    if (demo) banner += `<p><strong>Demo workspace</strong> — your farm notebook is separate.</p>${button('Return to farm notebook', 'workspace')}`;
+    if (opened.status === 'migration') banner += `<p><strong>Legacy data found.</strong> Review ${counts(state)}. Valid amounts convert to centavos; historical dates stay unchanged; completion times remain unknown. The original pondwise_v1 will remain untouched.</p>${button('Migrate safely', 'migrate', '', 'primary')}${button('Export original data', 'raw')}`;
+    if (store.blocked) banner += `<p><strong>Recovery required.</strong> ${esc(opened.error?.message || 'Storage unavailable.')} Ordinary saves are blocked. Export original data, then use Help & settings to restore a validated backup.</p>${button('Export raw workspace', 'raw')}${link('Open recovery tools', 'settings')}`;
+    if (conflict) banner += `<p><strong>Workspace changed in another tab.</strong> Saves are paused. Drafts are retained here; download them before reloading.</p>${button('Export drafts', 'draft-export')}${button('Reload saved workspace', 'reload')}`;
+    $('workspaceBanner').innerHTML = banner;
   }
-  for (i = 0; i < sales.length; i++) {
-    if (!pondId || sales[i].pondId === pondId) sal += Number(sales[i].amount);
-  }
-  return { expenses: exp, sales: sal, profit: sal - exp };
-}
-
-function getUpcomingTasks(tasks, pondId) {
-  var out = [];
-  var i;
-  for (i = 0; i < tasks.length; i++) {
-    if (tasks[i].pondId === pondId && !tasks[i].done) out.push(tasks[i]);
-  }
-  out.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-  return out;
-}
-
-// Today's schedule for the mobile dashboard: open tasks due today or overdue
-// first (oldest first), then tasks finished today. Capped at 6 rows.
-function getTodaySchedule(tasks, pondId, today) {
-  var open = [];
-  var doneToday = [];
-  var i;
-  for (i = 0; i < tasks.length; i++) {
-    var t = tasks[i];
-    if (t.pondId !== pondId) continue;
-    if (!t.done && t.date <= today) open.push(t);
-    else if (t.done && t.date === today) doneToday.push(t);
-  }
-  open.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-  return open.concat(doneToday).slice(0, 6);
-}
-
-// Rule-based tips from the latest water log. Simple if/else on purpose.
-function buildAdvice(waterLog) {
-  var tips = [];
-  tips.push("Feed only what fish finish in 10-15 minutes. Remove leftover feed.");
-  if (!waterLog) {
-    tips.push("No water records yet. Log temperature and pH weekly.");
-    return tips;
-  }
-  var ph = Number(waterLog.ph);
-  var temp = Number(waterLog.temp);
-  if (waterLog.ph !== "" && (ph < 6.5 || ph > 9)) {
-    tips.push("pH is " + ph + ". Safe range is about 6.5-9. Change part of the water and re-check tomorrow.");
-  } else {
-    tips.push("pH looks OK. Keep logging it weekly.");
-  }
-  if (waterLog.temp !== "" && (temp < 24 || temp > 32)) {
-    tips.push("Temperature is " + temp + "C. Most warm-water fish prefer 24-32C. Add shade or adjust depth.");
-  }
-  if (waterLog.notes) tips.push("Your note: " + waterLog.notes);
-  return tips;
-}
-
-// ---------- 3. Navigation ----------
-
-function showSection(name) {
-  var names = ["dashboard", "ponds", "feed", "tasks", "records", "finance", "plans", "guide"];
-  var i;
-  for (i = 0; i < names.length; i++) {
-    document.getElementById("section-" + names[i]).hidden = (names[i] !== name);
-  }
-  // Underline the active tab so users know where they are.
-  var tabs = document.querySelectorAll(".tabs button");
-  for (i = 0; i < tabs.length; i++) {
-    tabs[i].classList.toggle("active", tabs[i].getAttribute("data-section") === name);
-  }
-  // Same for the mobile bottom tab bar.
-  var bar = document.querySelectorAll(".tabbar button");
-  for (i = 0; i < bar.length; i++) {
-    bar[i].classList.toggle("active", bar[i].getAttribute("data-section") === name);
-  }
-  // Deep link: the URL hash remembers the open section.
-  if (window.location.hash !== "#" + name) window.location.hash = "#" + name;
-  refresh();
-}
-
-// ---------- 4. Ponds ----------
-
-function addPond(event) {
-  event.preventDefault();
-  var state = loadData();
-  if (state.ponds.length >= pondLimit()) {
-    renderPondNote(state, true);
-    return false;
-  }
-  var pond = {
-    id: makeId(),
-    name: document.getElementById("pondName").value.trim(),
-    size: document.getElementById("pondSize").value,
-    notes: document.getElementById("pondNotes").value.trim(),
-    stock: { common: "", scientific: "", count: "", avgWeightG: "" }
-  };
-  state.ponds.push(pond);
-  state.activePondId = pond.id;
-  saveData(state);
-  document.getElementById("pondForm").reset();
-  refresh();
-  return false;
-}
-
-function selectPond(id) {
-  var state = loadData();
-  state.activePondId = id;
-  saveData(state);
-  refresh();
-}
-
-function deletePond(id) {
-  if (!confirm("Delete this pond and its records?")) return;
-  var state = loadData();
-  state.ponds = state.ponds.filter(function (p) { return p.id !== id; });
-  state.tasks = state.tasks.filter(function (t) { return t.pondId !== id; });
-  state.feedLogs = state.feedLogs.filter(function (t) { return t.pondId !== id; });
-  state.waterLogs = state.waterLogs.filter(function (t) { return t.pondId !== id; });
-  state.healthLogs = state.healthLogs.filter(function (t) { return t.pondId !== id; });
-  state.maintLogs = state.maintLogs.filter(function (t) { return t.pondId !== id; });
-  state.expenses = state.expenses.filter(function (t) { return t.pondId !== id; });
-  state.sales = state.sales.filter(function (t) { return t.pondId !== id; });
-  if (state.activePondId === id) {
-    state.activePondId = state.ponds.length ? state.ponds[0].id : null;
-  }
-  saveData(state);
-  refresh();
-}
-
-function saveStock(event) {
-  event.preventDefault();
-  var state = loadData();
-  var pond = getActivePond(state);
-  if (!pond) { alert("Add a pond first."); return false; }
-  pond.stock.common = document.getElementById("stockCommon").value.trim();
-  pond.stock.scientific = document.getElementById("stockScientific").value.trim();
-  pond.stock.count = document.getElementById("stockCount").value;
-  pond.stock.avgWeightG = document.getElementById("stockWeight").value;
-  saveData(state);
-  refresh();
-  return false;
-}
-
-// ---------- 5. Feed + species library ----------
-
-function estimateFeed() {
-  var count = Number(document.getElementById("feedCount").value);
-  var weight = Number(document.getElementById("feedWeight").value);
-  var rate = Number(document.getElementById("feedRate").value);
-  if (!count || !weight || !rate) {
-    document.getElementById("feedResult").textContent = "Enter count, weight, and rate.";
-    return;
-  }
-  var kg = calcFeedKg(count, weight, rate);
-  document.getElementById("feedResult").textContent =
-    "Daily feed: " + kg.toFixed(2) + " kg (" + (kg / 2).toFixed(2) + " kg x 2 feedings)";
-  document.getElementById("feedHint").textContent =
-    "Guide: fry 8-10%, fingerlings 5-8%, juveniles 3-5%, grow-out 2-3% of body weight per day.";
-}
-
-function fillFeedFromPond() {
-  var state = loadData();
-  var pond = getActivePond(state);
-  if (!pond || !pond.stock.count) { alert("Save stock for this pond first."); return; }
-  document.getElementById("feedCount").value = pond.stock.count;
-  document.getElementById("feedWeight").value = pond.stock.avgWeightG;
-  var rate = findLocalRate(pond.stock.scientific, pond.stock.common);
-  if (!rate) rate = suggestRateByWeight(Number(pond.stock.avgWeightG));
-  document.getElementById("feedRate").value = rate;
-}
-
-function findLocalRate(scientific, common) {
-  var i;
-  var s = (scientific || "").toLowerCase();
-  var c = (common || "").toLowerCase();
-  for (i = 0; i < SPECIES_LIST.length; i++) {
-    if (SPECIES_LIST[i].scientific.toLowerCase() === s) return SPECIES_LIST[i].rate;
-    if (c && SPECIES_LIST[i].common.toLowerCase() === c) return SPECIES_LIST[i].rate;
-  }
-  return null;
-}
-
-// Live species search. Tries FishBase API, falls back to local list.
-function searchSpecies() {
-  var q = document.getElementById("speciesSearch").value.trim();
-  var box = document.getElementById("speciesResults");
-  box.innerHTML = "<li>Searching...</li>";
-  var local = searchLocal(q);
-  // FishBase API: GET https://fishbase.ropensci.org/species?Genus=TILAPIA...
-  // We search by genus word; on any failure we show local results.
-  var genus = q.split(" ")[0];
-  fetch("https://fishbase.ropensci.org/species?Genus=" + encodeURIComponent(genus) + "&limit=5")
-    .then(function (res) { return res.json(); })
-    .then(function (json) {
-      var rows = json.data || json;
-      box.innerHTML = "";
-      if (rows && rows.length) {
-        rows.slice(0, 5).forEach(function (r) {
-          var name = (r.Genus || "") + " " + (r.Species || "");
-          var li = document.createElement("li");
-          li.textContent = name.trim() + " (FishBase) ";
-          var btn = document.createElement("button");
-          btn.textContent = "Use";
-          btn.className = "btn-small btn-ghost";
-          btn.onclick = function () { useSpecies("", name.trim()); };
-          li.appendChild(btn);
-          box.appendChild(li);
-        });
-      } else {
-        renderSpeciesRows(box, local, "local");
-      }
-    })
-    .catch(function () {
-      box.innerHTML = "";
-      renderSpeciesRows(box, local, "local (offline)");
+  function counts(s) { return D.COLLECTIONS.map(k => `${s.data[k].length} ${k}`).join(', '); }
+  function draftKey(form) { return [demo ? 'demo' : 'farm', state.data.activePondId || 'none', form.id].join(':'); }
+  function savedDraft(formId) { return drafts[[demo ? 'demo' : 'farm', state.data.activePondId || 'none', formId].join(':')]; }
+  function capture() {
+    document.querySelectorAll('form[data-draft]').forEach(form => {
+      const values = {}; Array.from(form.elements).filter(e => e.name).forEach(e => { values[e.name] = e.type === 'checkbox' ? e.checked : e.value; });
+      if (form.dataset.dirty === 'true') drafts[draftKey(form)] = { values, editing: form.dataset.editing || '' };
     });
-}
-
-function searchLocal(q) {
-  q = q.toLowerCase();
-  if (!q) return SPECIES_LIST;
-  return SPECIES_LIST.filter(function (s) {
-    return s.common.toLowerCase().indexOf(q) >= 0 ||
-      s.scientific.toLowerCase().indexOf(q) >= 0;
-  });
-}
-
-function renderSpeciesRows(box, list, tag) {
-  box.innerHTML = "";
-  if (!list.length) { box.innerHTML = "<li>No match. Try another name.</li>"; return; }
-  list.forEach(function (s) {
-    var li = document.createElement("li");
-    li.textContent = s.common + " - " + s.scientific + " (" + tag + ", guide " + s.rate + "%) ";
-    var btn = document.createElement("button");
-    btn.textContent = "Use";
-    btn.className = "btn-small btn-ghost";
-    btn.onclick = function () { useSpecies(s.common, s.scientific); };
-    li.appendChild(btn);
-    box.appendChild(li);
-  });
-}
-
-function useSpecies(common, scientific) {
-  showSection("ponds");
-  document.getElementById("stockCommon").value = common;
-  document.getElementById("stockScientific").value = scientific;
-}
-
-// ---------- 6. Tasks ----------
-
-function addTask(event) {
-  event.preventDefault();
-  var state = loadData();
-  if (!state.activePondId) { alert("Add a pond first."); return false; }
-  state.tasks.push({
-    id: makeId(),
-    pondId: state.activePondId,
-    title: document.getElementById("taskTitle").value.trim(),
-    type: document.getElementById("taskType").value,
-    date: document.getElementById("taskDate").value,
-    done: false
-  });
-  saveData(state);
-  event.target.reset();
-  refresh();
-  return false;
-}
-
-function toggleTask(id) {
-  var state = loadData();
-  var i;
-  for (i = 0; i < state.tasks.length; i++) {
-    if (state.tasks[i].id === id) state.tasks[i].done = !state.tasks[i].done;
   }
-  saveData(state);
-  refresh();
-}
-
-function deleteTask(id) {
-  var state = loadData();
-  state.tasks = state.tasks.filter(function (t) { return t.id !== id; });
-  saveData(state);
-  refresh();
-}
-
-// ---------- 6b. Calendar ----------
-
-var calCursor = null;   // { y, m } month on display (m is 0-based)
-var calSelected = null; // yyyy-mm-dd picked day
-
-function calEnsure() {
-  if (!calCursor) {
-    var d = new Date();
-    calCursor = { y: d.getFullYear(), m: d.getMonth() };
+  function hydrate() {
+    document.querySelectorAll('form[data-draft]').forEach(form => {
+      const draft = drafts[draftKey(form)]; if (!draft) return;
+      Object.entries(draft.values).forEach(([name, value]) => { const e = form.elements.namedItem(name); if (e) { if (e.type === 'checkbox') e.checked = value; else e.value = value; } });
+      form.dataset.dirty = 'true'; form.dataset.editing = draft.editing;
+    });
   }
-  if (!calSelected) calSelected = todayStr();
-}
-
-function pad2(n) {
-  return (n < 10 ? "0" : "") + n;
-}
-
-function ymd(y, m, d) {
-  var dt = new Date(y, m, d);
-  return dt.getFullYear() + "-" + pad2(dt.getMonth() + 1) + "-" + pad2(dt.getDate());
-}
-
-function calMove(dir) {
-  calEnsure();
-  var dt = new Date(calCursor.y, calCursor.m + dir, 1);
-  calCursor = { y: dt.getFullYear(), m: dt.getMonth() };
-  refresh();
-}
-
-function calToday() {
-  var d = new Date();
-  calCursor = { y: d.getFullYear(), m: d.getMonth() };
-  calSelected = todayStr();
-  var el = document.getElementById("taskDate");
-  if (el) el.value = calSelected;
-  refresh();
-}
-
-// Picking a day fills the add-task date so the task lands on that day.
-function calPick(dateStr) {
-  var parts = dateStr.split("-");
-  calCursor = { y: Number(parts[0]), m: Number(parts[1]) - 1 };
-  calSelected = dateStr;
-  var el = document.getElementById("taskDate");
-  if (el) el.value = dateStr;
-  refresh();
-}
-
-function tasksOn(tasks, dateStr) {
-  return tasks.filter(function (t) { return t.date === dateStr; });
-}
-
-// ---------- 7. Records ----------
-
-function needPond(state) {
-  if (!state.activePondId) { alert("Add a pond first."); return true; }
-  return false;
-}
-
-function flashSaved(elId, msg) {
-  var el = document.getElementById(elId);
-  if (!el) return;
-  el.textContent = msg;
-  el.hidden = false;
-  setTimeout(function () { el.hidden = true; }, 4000);
-}
-
-function deleteRow(collection, id) {
-  var state = loadData();
-  state[collection] = state[collection].filter(function (r) { return r.id !== id; });
-  saveData(state);
-  refresh();
-}
-
-function addFeedLog(event) {
-  event.preventDefault();
-  var state = loadData();
-  if (needPond(state)) return false;
-  var kg = document.getElementById("feedLogKg").value;
-  state.feedLogs.push({
-    id: makeId(), pondId: state.activePondId,
-    date: document.getElementById("feedLogDate").value,
-    kg: kg
-  });
-  saveData(state);
-  event.target.reset();
-  refresh();
-  setDefaultDates();
-  flashSaved("recordsSaved", "Saved! You gave " + kg + " kg of food.");
-  return false;
-}
-
-function addWaterLog(event) {
-  event.preventDefault();
-  var state = loadData();
-  if (needPond(state)) return false;
-  state.waterLogs.push({
-    id: makeId(), pondId: state.activePondId,
-    date: document.getElementById("waterDate").value,
-    temp: document.getElementById("waterTemp").value,
-    ph: document.getElementById("waterPh").value,
-    notes: document.getElementById("waterNotes").value.trim()
-  });
-  saveData(state);
-  event.target.reset();
-  refresh();
-  setDefaultDates();
-  flashSaved("recordsSaved", "Saved! Your water check is written.");
-  return false;
-}
-
-function addHealthLog(event) {
-  event.preventDefault();
-  var state = loadData();
-  if (needPond(state)) return false;
-  state.healthLogs.push({
-    id: makeId(), pondId: state.activePondId,
-    date: document.getElementById("healthDate").value,
-    note: document.getElementById("healthNote").value.trim()
-  });
-  saveData(state);
-  event.target.reset();
-  refresh();
-  setDefaultDates();
-  flashSaved("recordsSaved", "Saved! Your fish note is written.");
-  return false;
-}
-
-function addMaintenanceLog(event) {
-  event.preventDefault();
-  var state = loadData();
-  if (needPond(state)) return false;
-  state.maintLogs.push({
-    id: makeId(), pondId: state.activePondId,
-    date: document.getElementById("maintDate").value,
-    note: document.getElementById("maintNote").value.trim()
-  });
-  saveData(state);
-  event.target.reset();
-  refresh();
-  setDefaultDates();
-  flashSaved("recordsSaved", "Saved! Your work note is written.");
-  return false;
-}
-
-// ---------- 8. Finance ----------
-
-function addExpense(event) {
-  event.preventDefault();
-  var state = loadData();
-  if (needPond(state)) return false;
-  if (!canUseMoney()) { showSection("plans"); return false; }
-  var item = document.getElementById("expItem").value.trim();
-  var amount = document.getElementById("expAmount").value;
-  state.expenses.push({
-    id: makeId(), pondId: state.activePondId,
-    date: document.getElementById("expDate").value,
-    item: item,
-    amount: amount
-  });
-  saveData(state);
-  event.target.reset();
-  refresh();
-  setDefaultDates();
-  flashSaved("financeSaved", "Saved! You paid " + amount + " pesos for " + item + ".");
-  return false;
-}
-
-function addSale(event) {
-  event.preventDefault();
-  var state = loadData();
-  if (needPond(state)) return false;
-  if (!canUseMoney()) { showSection("plans"); return false; }
-  var item = document.getElementById("saleItem").value.trim();
-  var amount = document.getElementById("saleAmount").value;
-  state.sales.push({
-    id: makeId(), pondId: state.activePondId,
-    date: document.getElementById("saleDate").value,
-    item: item,
-    amount: amount
-  });
-  saveData(state);
-  event.target.reset();
-  refresh();
-  setDefaultDates();
-  flashSaved("financeSaved", "Saved! You got " + amount + " pesos for " + item + ".");
-  return false;
-}
-
-// ---------- 9. Helper chatbot (railguarded to PondWise topics) ----------
-
-// Whole words the Helper is allowed to talk about (plurals included).
-// Whole-word matching matters: substring matching would let "weather" pass
-// because it contains "eat". Anything else gets a polite redirect.
-var GUIDE_WORDS = [
-  "pond", "ponds", "fish", "fishes", "tilapia", "catfish", "carp", "carps",
-  "milkfish", "gourami", "snakehead", "fingerling", "fingerlings",
-  "feed", "feeds", "feeding", "food", "foods", "kg", "kilo", "eat", "eating", "rate",
-  "water", "waters", "ph", "temp", "temperature", "oxygen", "algae", "clear", "muddy",
-  "health", "healthy", "sick", "disease", "diseases", "dead", "floating", "floaters",
-  "spot", "spots", "vet",
-  "task", "tasks", "todo", "clean", "cleaning", "inspect", "inspection",
-  "repair", "schedule", "calendar", "reminder",
-  "money", "profit", "sale", "sales", "sold", "sell", "expense", "expenses",
-  "cost", "costs", "paid", "pay", "buy", "bought", "price", "prices",
-  "peso", "pesos", "earn", "earned",
-  "record", "records", "log", "logs", "note", "notes", "report", "dashboard",
-  "pondwise", "helper", "guide", "start", "started", "add", "save", "saved",
-  "delete", "remove", "backup", "demo"
-];
-var GUIDE_RE = new RegExp("\\b(" + GUIDE_WORDS.join("|") + ")\\b");
-
-// Hard off-topic tripwires. Blocklist wins: even if a PondWise word appears,
-// these topics are refused (e.g. "bet my fish will win the game").
-var BLOCK_RE = /\b(weather|rain forecast|news|sports?|basketball|football|volleyball|game|games|politics|politician|election|president|mayor|lottery|lotto|casino|bet|betting|movie|movies|film|music|song|songs|love|marry|marriage|school|homework|math|joke|god|pray|prayer|church|recipe|cook|ulam)\b/;
-
-// Allowed how-to / identity phrases that carry no PondWise noun by themselves.
-var HELP_RE = /\b(help|how (do i|do u|to) (start|use|add|save)|what is pondwise|why pondwise|who are you|your name|what can you do)\b/;
-
-var OFFTOPIC_REPLY = "Sorry, I only talk about PondWise and fishpond care (ponds, fish, food, water, tasks, records, money). " +
-  "Try asking: 'How much feed today?' or 'Check my water' or 'How do I see my profit?'";
-
-function isOnTopic(text) {
-  var t = " " + (text || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ") + " ";
-  if (!t.trim()) return false;
-  if (BLOCK_RE.test(t)) return false;
-  if (GUIDE_RE.test(t)) return true;
-  if (HELP_RE.test(t)) return true;
-  // Short greetings are allowed so the bot feels friendly, then it redirects.
-  if (/^\s*(hi|hello|hey|good (morning|afternoon|evening)|salamat|thanks?|thank you)\b/.test(t)) return true;
-  return false;
-}
-
-function latestWater(state, pondId) {
-  var logs = state.waterLogs.filter(function (w) { return w.pondId === pondId; });
-  logs.sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-  return logs[0] || null;
-}
-
-function botReply(question) {
-  var state = loadData();
-  var pond = getActivePond(state);
-  var q = (question || "").toLowerCase();
-
-  // Railguard: refuse off-topic questions.
-  if (!isOnTopic(question)) return OFFTOPIC_REPLY;
-
-  if (/^(hi|hello|hey|good (morning|afternoon|evening))\b/.test(q.trim())) {
-    return "Hello! I am your PondWise Helper. I can explain your ponds, food, water, tasks, and money. " +
-      "Try: 'How much feed today?' or 'How do I start?'";
+  function render(preserve = true) {
+    const focused = document.activeElement;
+    const focusId = focused?.id, focusData = focused?.dataset.action ? { ...focused.dataset } : null;
+    if (preserve) capture(); nav();
+    const routes = { overview: overviewView, ponds: pondsView, tasks: tasksView, records: recordsView, money: moneyView, tools: toolsView, settings: settingsView, plans: plansView, more: moreView };
+    $('main').innerHTML = routes[page](); hydrate();
+    document.querySelectorAll('form[data-draft]').forEach(form => { if (!usable()) form.querySelectorAll('button[type=submit]').forEach(b => { b.disabled = true; }); });
+    if (page === 'tools') searchSpecies('');
+    const focusTarget = focusId ? $(focusId) : focusData ? [...document.querySelectorAll('[data-action]')].find(e => Object.entries(focusData).every(([k, v]) => e.dataset[k] === v)) : null;
+    if (focusTarget) focusTarget.focus({ preventScroll: true }); else if (focused?.closest('main')) $('main').focus({ preventScroll: true });
+    if (editing) document.querySelector('form[data-editing]:not([data-editing=""])')?.scrollIntoView({ block: 'start' });
   }
-  if (q.indexOf("thank") >= 0 || q === "salamat") {
-    return "You are welcome! Keep logging every day - small notes make healthy fish.";
+  function route() {
+    capture(); const hash = location.hash.slice(1); page = aliases[hash] || (titles[hash] ? hash : 'overview'); render(false); $('main').focus({ preventScroll: true }); if (!editing) window.scrollTo({ top: 0, behavior: 'instant' });
   }
-  if (q.indexOf("who are you") >= 0 || q.indexOf("your name") >= 0) {
-    return "I am your PondWise Helper - a small assistant inside this app. " +
-      "I read your ponds, food, water, tasks, and money notes to answer questions. " +
-      "Try: 'How much feed today?' or 'Check my water'.";
+  function commit(next, message, form = null, recovery = false) {
+    if (!recovery && !usable()) throw new Error('Finish migration or resolve recovery/conflict before saving.');
+    const savedDraftKey = form ? draftKey(form) : null;
+    state = store.commit(next, recovery); opened = { status: 'ready', state };
+    if (form) { delete drafts[savedDraftKey]; form.dataset.dirty = 'false'; form.reset(); }
+    editing = null; render(false); notify(message); return true;
   }
-  if (q.indexOf("what is pondwise") >= 0 || q === "what is pondwise?") {
-    return "WHAT: PondWise is your fishpond notebook on your phone or computer. " +
-      "It remembers your ponds, fish, food, water, tasks, and money so you do not forget.";
+  function requirePond() { const p = active(); if (!p) throw new Error('Select or create an active pond first.'); return p; }
+  function overviewView() {
+    const p = active();
+    if (!p) return head('Your pond notebook', 'A record of the work, water and fish in your care.') + `<section class="panel attention"><h2>Start with a pond</h2><p>Create your first pond, then save a stock snapshot and a daily observation.</p><div class="actions">${link('Create a pond', 'ponds', 'button primary')}${button('Explore the demo', 'workspace')}</div></section>`;
+    const tasks = D.live(state.data.tasks).filter(t => t.pondId === p.id), open = tasks.filter(t => !t.done && t.date <= day).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+    const rec = D.recommendation(p.stock.count, p.stock.avgWeightG), actual = D.live(state.data.feedLogs).filter(r => r.pondId === p.id && r.date === day).reduce((n, r) => n + r.kg, 0);
+    return head('Today at ' + p.name, `${day} • ${state.settings.timezone}`) + `<section class="panel attention"><h2>Work needing attention</h2>${open.length ? open.map(taskRow).join('') : empty('No overdue or today tasks. Plan upcoming work in Tasks.')}${link('Open task agenda', 'tasks')}</section><div class="metrics"><div class="metric"><strong>${rec.kg === undefined ? 'Incomplete stock' : rec.kg.toFixed(2) + ' kg'}</strong><span>Daily feed estimate</span></div><div class="metric"><strong>${actual.toFixed(2)} kg</strong><span>Feed logged today</span></div><div class="metric"><strong>${rec.kg === undefined ? '—' : Math.max(0, rec.kg - actual).toFixed(2) + ' kg'}</strong><span>Remaining estimate, not a feeding instruction</span></div></div><div class="split"><section class="panel"><h2>Latest water observation</h2>${waterText(D.latestWater(state.data, p.id))}${button('Record a water check', 'record-type', 'data-col="waterLogs"')}</section><section class="panel"><h2>Completed today</h2>${tasks.filter(t => D.completedToday(t, state.settings.timezone)).map(taskRow).join('') || empty('No tasks completed today. Older completions with unknown times stay in task history.')}<h2>Recent activity</h2>${historyRows(allRows().filter(r => r.pondId === p.id).slice(0, 5), false)}${link('View complete history', 'records')}</section></div>`;
   }
-  if (q.indexOf("why") >= 0 && q.indexOf("pondwise") >= 0) {
-    return "WHY: So you feed the right amount, spot bad water early, and know if you earned money. " +
-      "No more lost paper notes.";
+  function field(name, label, type = 'text', value = '', attrs = '', full = false) {
+    const id = 'field-' + name;
+    const control = type === 'textarea' ? `<textarea id="${id}" name="${name}" ${attrs}>${esc(value)}</textarea>` : `<input id="${id}" name="${name}" type="${type}" value="${esc(value)}" ${attrs}>`;
+    return `<div class="field ${full ? 'full' : ''}"><label for="${id}">${esc(label)}</label>${control}</div>`;
   }
-  if (q.indexOf("how do i start") >= 0 || q.indexOf("how to start") >= 0 || q.indexOf("how do i use") >= 0) {
-    return "HOW (4 easy steps): 1) Go to Ponds, add your pond, tap its card. " +
-      "2) Write your fish: name, how many, how big. " +
-      "3) Every day open Records and save food + water. " +
-      "4) When you pay or sell, open Money and save it. That is all!";
+  const num = (name, label, value, min, max, optional = false, step = 'any') => field(name, label, 'number', value ?? '', `min="${min}" max="${max}" step="${step}" ${optional ? '' : 'required'}`);
+  function form(id, content, label = 'Save record', edit = '') { content = content.replaceAll('id="field-', `id="${id}-field-`).replaceAll('for="field-', `for="${id}-field-`); return `<form id="${id}" data-draft data-editing="${esc(edit)}" novalidate><div class="form-error" role="alert" tabindex="-1" hidden></div><div class="form-grid">${content}</div><p class="draft-note">Drafts stay with this pond while you move between screens. Export drafts in Settings before leaving or reloading.</p><div class="actions"><button class="primary" type="submit">${esc(label)}</button>${button('Discard draft', 'discard', `data-form="${id}"`)}</div></form>`; }
+  function pondsView() {
+    const p = active(), count = state.data.ponds.filter(p => !p.archived && !p.deletedAt).length;
+    const cards = state.data.ponds.filter(p => !p.deletedAt).map(p => `<article class="panel"><span class="pill">${p.archived ? 'Archived' : p.id === state.data.activePondId ? 'Active pond' : 'Pond'}</span><h2 class="wrap">${esc(p.name)}</h2><p>${p.size === null ? 'Area not recorded' : esc(p.size) + ' m²'}<br>${esc(p.stock.common || p.stock.scientific || 'Species not recorded')}<br>${p.stock.count === null ? 'Count missing' : esc(p.stock.count) + ' fish'}; ${p.stock.avgWeightG === null ? 'weight missing' : esc(p.stock.avgWeightG) + ' g average'}</p><small>Stock updated: ${esc(p.stock.updatedAt || 'Unknown (legacy or not yet recorded)')}</small><div class="actions">${!p.archived ? button('Select pond', 'select-pond', `data-id="${esc(p.id)}"`) : ''}${button(p.archived ? 'Reactivate' : 'Archive', 'archive', `data-id="${esc(p.id)}"`)}${button('Move to trash', 'trash', `data-col="ponds" data-id="${esc(p.id)}"`, 'danger')}</div></article>`).join('');
+    return head('Ponds', `${count} active ponds. ${tier === 'elite' ? 'Unlimited' : D.limit(tier)} allowed in ${tier} preview. Existing ponds survive tier changes.`) + `<div class="cards">${cards || empty('No ponds yet. Create one below.')}</div><section class="panel" style="margin-top:24px"><h2>Create a pond</h2>${form('pond-create', field('name', 'Pond name (required)', 'text', '', 'required maxlength="120"') + num('size', 'Area (m², optional)', '', 0, Number.MAX_VALUE, true) + field('notes', 'Notes (optional)', 'textarea', '', 'maxlength="2000"', true), 'Create pond')}</section>${p ? `<section class="panel"><h2>Edit ${esc(p.name)} and stock snapshot</h2><p>Stock is a current snapshot. Sales and health notes do not change the count.</p>${form('pond-edit', field('name', 'Pond name (required)', 'text', p.name, 'required maxlength="120"') + num('size', 'Area (m², optional)', p.size, 0, Number.MAX_VALUE, true) + field('notes', 'Pond notes (optional)', 'textarea', p.notes, 'maxlength="2000"', true) + field('common', 'Common species name (optional)', 'text', p.stock.common, 'maxlength="200"') + field('scientific', 'Scientific name (optional)', 'text', p.stock.scientific, 'maxlength="200"') + num('count', 'Fish count (optional; whole fish)', p.stock.count, 0, 10000000, true, '1') + num('avgWeightG', 'Average weight (g, optional)', p.stock.avgWeightG, 0, 1000000, true), 'Save pond and stock')}<div class="actions">${link('Look up a species', 'tools')}</div><h3>Shared feed estimate</h3>${feedText(p)}</section>` : ''}`;
   }
-  if (q.indexOf("add") >= 0 && q.indexOf("pond") >= 0) {
-    return "To add a pond: open Ponds, find 'Step 2: Add a new pond', type the name (example: Home Pond), " +
-      "type the size (example: 500), then tap 'Add this pond'. Then tap its card to pick it.";
+  function scopeOptions(scope) { return `<option value="active" ${!scope || scope === 'active' ? 'selected' : ''}>Active pond</option><option value="all" ${scope === 'all' ? 'selected' : ''}>All ponds</option>` + state.data.ponds.filter(p => !p.deletedAt).map(p => `<option value="${esc(p.id)}" ${scope === p.id ? 'selected' : ''}>${esc(p.name)}${p.archived ? ' (archived)' : ''}</option>`).join(''); }
+  function filterView(kind, types = true) {
+    const f = filters[kind];
+    return `<div class="filters" data-filters="${kind}"><div><label for="scope">History scope</label><select id="scope" data-filter="scope">${scopeOptions(f.scope)}</select></div><div><label for="history-search">Search history</label><input id="history-search" type="search" data-filter="q" value="${esc(f.q)}" maxlength="200"></div>${types ? `<div><label for="type-filter">Record type</label><select id="type-filter" data-filter="type"><option value="">All types</option>${Object.entries(labels).filter(([k]) => kind === 'money' ? ['expenses', 'sales'].includes(k) : ['feedLogs', 'waterLogs', 'healthLogs', 'maintLogs'].includes(k)).map(([k, v]) => `<option value="${k}" ${f.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>` : ''}<div><label for="from">From date</label><input id="from" type="date" data-filter="from" value="${f.from}"></div><div><label for="to">Through date</label><input id="to" type="date" data-filter="to" value="${f.to}"></div><div>${button('Apply filters', 'filter', `data-kind="${kind}"`)}${button('Reset filters', 'filter-reset', `data-kind="${kind}"`)}</div></div>`;
   }
-  if (q.indexOf("stock") >= 0 || (q.indexOf("fish") >= 0 && q.indexOf("add") >= 0)) {
-    return "To write your fish: pick a pond card first, then in 'Step 3: Fish inside' type the fish name, " +
-      "how many, and how big in grams. Tap 'Save fish'.";
+  function allRows(cols = D.COLLECTIONS.slice(2)) {
+    const retained = new Set(state.data.ponds.filter(p => !p.deletedAt).map(p => p.id));
+    return D.sorted(cols.flatMap(col => D.live(state.data[col]).filter(r => retained.has(r.pondId)).map(r => ({ ...r, col }))));
   }
-  if (q.indexOf("feed") >= 0 || q.indexOf("food") >= 0) {
-    if (!pond) return "Add a pond first (open Ponds), then I can tell you how much food to give.";
-    if (!pond.stock.count || !pond.stock.avgWeightG) {
-      return "I need your fish number and size first. Open Ponds, pick " + pond.name +
-        ", and save how many fish and how big they are. Then ask me again.";
-    }
-    var rate = findLocalRate(pond.stock.scientific, pond.stock.common) ||
-      suggestRateByWeight(Number(pond.stock.avgWeightG));
-    var kg = calcFeedKg(Number(pond.stock.count), Number(pond.stock.avgWeightG), rate);
-    var half = kg / 2;
-    return "For " + pond.name + " (" + pond.stock.count + " fish x " + pond.stock.avgWeightG + "g): give about " +
-      kg.toFixed(2) + " kg today - that is " + half.toFixed(2) + " kg in the morning and " +
-      half.toFixed(2) + " kg in the afternoon. Only give what fish finish in 10-15 minutes.";
+  function filtered(rows, kind) {
+    const f = filters[kind], scope = !f.scope || f.scope === 'active' ? active()?.id : f.scope;
+    return rows.filter(r => (scope === 'all' || r.pondId === scope) && (!f.type || r.col === f.type) && (!f.from || r.date >= f.from) && (!f.to || r.date <= f.to) && (!f.q || [r.title, r.type, r.done ? 'completed' : 'open', r.item, r.note, r.notes, r.category, r.date, describe(r), labels[r.col], pondName(r.pondId)].join(' ').toLowerCase().includes(f.q.toLowerCase())));
   }
-  if (q.indexOf("water") >= 0 || q.indexOf("ph") >= 0 || q.indexOf("temp") >= 0) {
-    if (!pond) return "Add a pond first, then save a water check in Records so I can read it.";
-    var wl = latestWater(state, pond.id);
-    var tips = buildAdvice(wl);
-    return "Water advice for " + pond.name + ": " + tips.join(" ");
+  function describe(r) {
+    if (r.col === 'feedLogs') return r.skipped ? 'Skipped feeding' : r.kg + ' kg feed';
+    if (r.col === 'waterLogs') return `pH ${r.ph ?? 'not measured'}; temperature ${r.temp === null ? 'not measured' : r.temp + ' °C'}`;
+    if (r.col === 'expenses' || r.col === 'sales') return `${r.item}: ${currency(r.amountCentavos)}`;
+    return r.note || r.title;
   }
-  if (q.indexOf("sick") >= 0 || q.indexOf("disease") >= 0 || q.indexOf("dead") >= 0 || q.indexOf("floating") >= 0 || q.indexOf("health") >= 0) {
-    return "If fish are slow, floating, or have spots: 1) Do not overfeed today. 2) Change part of the water with clean water. " +
-      "3) Write what you see in Records > Fish health. 4) If many fish die, ask a local fish expert fast - I am not a vet.";
+  function historyRows(rows, actions = true) {
+    if (!rows.length) return empty('No matching records. Add a record or reset your filters.');
+    return `<ul class="timeline">${rows.map(r => `<li class="row"><div><span class="pill">${esc(labels[r.col])}</span><h3>${esc(describe(r))}</h3><p>${esc(r.date)} • ${esc(pondName(r.pondId))}${r.category ? ' • ' + esc(r.category) : ''}</p>${r.notes ? `<p class="wrap">${esc(r.notes)}</p>` : ''}</div>${actions ? `<div class="actions">${button('Edit', 'edit', `data-col="${r.col}" data-id="${esc(r.id)}"`)}${button('Trash', 'trash', `data-col="${r.col}" data-id="${esc(r.id)}"`, 'danger')}</div>` : ''}</li>`).join('')}</ul>`;
   }
-  if (q.indexOf("task") >= 0 || q.indexOf("todo") >= 0 || q.indexOf("remind") >= 0 || q.indexOf("schedule") >= 0) {
-    if (!pond) return "Add a pond first. Then open Tasks to add things like 'Morning feeding'.";
-    var upcoming = getUpcomingTasks(state.tasks, pond.id);
-    if (!upcoming.length) return "No open tasks for " + pond.name + ". Open Tasks and add one, like 'Morning feeding' for today.";
-    return "You have " + upcoming.length + " open task" + (upcoming.length === 1 ? "" : "s") + " for " + pond.name +
-      ". Next: '" + upcoming[0].title + "' on " + upcoming[0].date + ". Open Tasks to tick Done.";
+  function paginate(rows, kind, renderer = historyRows) {
+    const f = filters[kind], pages = Math.max(1, Math.ceil(rows.length / 12)); f.page = Math.min(f.page, pages);
+    return renderer(rows.slice((f.page - 1) * 12, f.page * 12)) + `<div class="pagination">${button('Previous page', 'page', `data-kind="${kind}" data-step="-1" ${f.page <= 1 ? 'disabled' : ''}`)}<span>${rows.length} records • Page ${f.page} of ${pages}</span>${button('Next page', 'page', `data-kind="${kind}" data-step="1" ${f.page >= pages ? 'disabled' : ''}`)}</div>`;
   }
-  if (q.indexOf("profit") >= 0 || q.indexOf("money") >= 0 || q.indexOf("sale") >= 0 || q.indexOf("expense") >= 0 || q.indexOf("earn") >= 0) {
-    if (!pond) return "Add a pond first. Then open Money to save what you paid and what you sold.";
-    var t = calcTotals(state.expenses, state.sales, pond.id);
-    var plain = t.profit >= 0
-      ? "Good! You have " + t.profit + " pesos left."
-      : "Careful: you paid more than you sold by " + Math.abs(t.profit) + " pesos.";
-    return "Money for " + pond.name + ": you paid " + t.expenses + " pesos, you sold " + t.sales +
-      " pesos. " + plain + " To see it, open Money - the green box on top shows money left.";
+  function entryForm(col) {
+    // A correction draft can outlive the transient `editing` flag when the
+    // operator changes pond, route, or money/record type. Restore its target
+    // before rendering so the heading and submit action cannot look like a
+    // new entry while still updating an existing row.
+    const draft = savedDraft('entry-' + col);
+    const editingId = editing?.col === col ? editing.id : draft?.editing;
+    const row = editingId ? state.data[col].find(r => r.id === editingId) : null;
+    let content = field('date', col === 'tasks' ? 'Due date (required; future dates allowed)' : 'Observation date (required)', 'date', row?.date || (col === 'tasks' ? selectedDay : day), `required ${col !== 'tasks' ? 'max="' + day + '"' : ''}`);
+    if (col === 'tasks') content += field('title', 'Task title (required)', 'text', row?.title || '', 'required maxlength="120"') + `<div class="field"><label for="field-type">Task type</label><select name="type" id="field-type">${D.TASK_TYPES.map(t => `<option ${row?.type === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`;
+    if (col === 'feedLogs') content += num('kg', 'Feed given (kg, required unless skipped)', row?.kg, 0, 1000000, true) + `<label class="check"><input type="checkbox" name="skipped" ${row?.skipped ? 'checked' : ''}>Skipped feeding (0 kg)</label>` + field('notes', 'Notes (optional)', 'textarea', row?.notes || '', 'maxlength="2000"', true);
+    if (col === 'waterLogs') content += num('ph', 'pH (0–14, optional)', row?.ph, 0, 14, true) + num('temp', 'Temperature (°C, 0–60, optional)', row?.temp, 0, 60, true) + field('notes', 'Water observation (required if no measurements)', 'textarea', row?.notes || '', 'maxlength="2000"', true);
+    if (col === 'healthLogs' || col === 'maintLogs') content += field('note', col === 'healthLogs' ? 'Fish health observation (required)' : 'Maintenance note (required)', 'textarea', row?.note || '', 'required maxlength="2000"', true);
+    if (col === 'expenses' || col === 'sales') content += field('item', 'Description (required)', 'text', row?.item || '', 'required maxlength="120"') + field('amount', 'Amount (PHP, required; up to 2 decimal places)', 'text', row ? amountText(row.amountCentavos) : '', 'required inputmode="decimal"') + field('category', 'Category (optional)', 'text', row?.category || '', 'maxlength="120"');
+    return `<section class="panel"><h2>${row ? 'Edit' : 'Add'} ${esc(labels[col].toLowerCase())}</h2><p>For <strong>${esc(row ? pondName(row.pondId) : active()?.name || 'no active pond')}</strong>.</p>${form('entry-' + col, content, row ? 'Save correction' : 'Save ' + labels[col].toLowerCase(), row?.id || '')}</section>`;
   }
-  // Generic "where" goes after topic branches so "Where is my profit?" gets money.
-  if (q.indexOf("where") >= 0) {
-    return "WHERE: Ponds = your ponds. Feed = food calculator. Tasks = things to do and calendar. " +
-      "Records = daily notes. Money = money in and out. Plans = subscription options. " +
-      "You are now in Helper - ask me anything about those.";
+  function recordsView() { return head('Records', 'Feeding, water, fish health and maintenance in one complete history.') + `<div class="panel"><label for="recordType">What would you like to record?</label><select id="recordType">${Object.entries(labels).filter(([k]) => !['tasks', 'sales', 'expenses'].includes(k)).map(([k, v]) => `<option value="${k}" ${recordType === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>` + entryForm(recordType) + `<section class="panel"><h2>Observation history</h2>${filterView('records')}${paginate(filtered(allRows(['feedLogs', 'waterLogs', 'healthLogs', 'maintLogs']), 'records'), 'records')}</section>`; }
+  function moneyView() {
+    const rows = filtered(allRows(['expenses', 'sales']), 'money');
+    const totals = D.totals({ expenses: rows.filter(r => r.col === 'expenses'), sales: rows.filter(r => r.col === 'sales') }, 'all');
+    const access = tier !== 'start';
+    return head('Money', 'Cash received less cash paid. This does not calculate accounting profit.') + `<section class="panel"><h2>Cash ledger</h2>${filterView('money')}<div class="metrics"><div class="metric"><strong>${currency(totals.income)}</strong><span>Income</span></div><div class="metric"><strong>${currency(totals.expenses)}</strong><span>Expenses</span></div><div class="metric"><strong class="${totals.net < 0 ? 'negative' : ''}">${currency(totals.net)}</strong><span>Net cash flow</span></div></div><p class="muted">Totals use the history scope, dates, type and search filters above. ${rows.length} matching transactions.</p>${paginate(rows, 'money')}</section>${access ? `<div class="actions">${button('Record expense', 'money-type', 'data-col="expenses"')}${button('Record income', 'money-type', 'data-col="sales"')}</div>${entryForm(moneyType)}` : `<section class="panel"><h2>Money entry is a Pro preview feature</h2><p>Existing transactions stay readable and exportable after a downgrade. Change the browser preview tier to add or correct transactions.</p>${link('Compare preview tiers', 'plans')}</section>`}`;
   }
-  if (q.indexOf("record") >= 0 || q.indexOf("log") >= 0 || q.indexOf("note") >= 0) {
-    return "To write a daily note: open Records. Pick 1 box: 1 Food given, 2 Water check, 3 Fish health, 4 Work done. " +
-      "The date is already today - just type and tap the big Save button.";
+  function taskRow(t) { return `<div class="row"><div><h3>${esc(t.title)}</h3><p>${esc(t.date)} • ${esc(pondName(t.pondId))} • ${esc(t.type)}${t.done ? ' • Completed ' + esc(t.completedAt ? D.today(state.settings.timezone, new Date(t.completedAt)) : '(time unknown)') : t.date < day ? ' • Overdue' : ''}</p></div><div class="actions">${button(t.done ? 'Reopen' : 'Complete', 'task-toggle', `data-id="${esc(t.id)}" aria-label="${esc((t.done ? 'Reopen ' : 'Complete ') + t.title)}"`)}${button('Edit', 'edit', `data-col="tasks" data-id="${esc(t.id)}"`)}${button('Trash', 'trash', `data-col="tasks" data-id="${esc(t.id)}" aria-label="${esc('Move task ' + t.title + ' to trash')}"`, 'danger')}</div></div>`; }
+  function calendarUTC(y, m, d) { const date = new Date(0); date.setUTCFullYear(y, m, d); date.setUTCHours(12, 0, 0, 0); return date; }
+  function calendar() {
+    const [y, m] = cursor.split('-').map(Number), first = calendarUTC(y, m - 1, 1).getUTCDay(), days = calendarUTC(y, m, 0).getUTCDate();
+    const tasks = D.live(state.data.tasks).filter(t => t.pondId === active()?.id);
+    return `<details><summary>Month calendar</summary><div class="actions">${button('Previous month', 'month', 'data-step="-1"')}<strong>${esc(cursor)}</strong>${button('Next month', 'month', 'data-step="1"')}${button('Today', 'today')}</div><div class="field"><label for="calendarDate">Choose a task date</label><input type="date" id="calendarDate" value="${selectedDay}"></div><div class="calendar" aria-label="Month dates">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => `<span aria-hidden="true">${d}</span>`).join('')}${'<span></span>'.repeat(first)}${Array.from({ length: days }, (_, i) => { const d = cursor + '-' + String(i + 1).padStart(2, '0'), count = tasks.filter(t => t.date === d).length; return button(i + 1, 'day', `data-date="${d}" aria-label="${d}, ${count} tasks" aria-pressed="${d === selectedDay}"`, count ? 'has-task' : ''); }).join('')}</div><h3>Selected date: ${esc(selectedDay)}</h3>${tasks.filter(t => t.date === selectedDay).map(taskRow).join('') || empty('No tasks for this date.')}</details>`;
   }
-  if (q.indexOf("backup") >= 0 || q.indexOf("download") >= 0 || q.indexOf("restore") >= 0) {
-    return "To keep a copy: on this page, tap 'Download backup' - it saves a file. " +
-      "To bring it back later, use 'Bring back a backup' and pick that file.";
+  function tasksView() {
+    const rank = t => t.done ? 3 : t.date < day ? 0 : t.date === day ? 1 : 2;
+    const rows = filtered(allRows(['tasks']), 'tasks').sort((a, b) => rank(a) - rank(b) || (a.done ? (b.completedAt || '').localeCompare(a.completedAt || '') : a.date.localeCompare(b.date)) || a.id.localeCompare(b.id));
+    const groups = [['Overdue', t => !t.done && t.date < day], ['Today', t => !t.done && t.date === day], ['Upcoming', t => !t.done && t.date > day], ['Completed', t => t.done]];
+    return head('Tasks', 'Completing a task records its completion time. It does not create a feeding or cash record.') + `<section class="panel"><h2>Task agenda</h2>${filterView('tasks', false)}${paginate(rows, 'tasks', items => groups.map(([label, match]) => `<h3>${label}</h3>${items.filter(match).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).map(taskRow).join('') || empty('No matching tasks on this page.')}`).join(''))}</section><section class="panel"><h2>Plan by date</h2>${calendar()}</section>${entryForm('tasks')}`;
   }
-  if (q.indexOf("demo") >= 0) {
-    return "Demo data is pretend ponds so you can practice. Tap 'Load demo data' (top of Ponds page) to see 3 ponds with food, water, and money already filled in.";
+  function toolsView() {
+    return head('Tools', 'Calculate an estimate or look up a species without changing your saved stock.') + `<section class="panel"><h2>Feed calculator</h2><p>Biomass = fish count × average grams ÷ 1,000. Daily estimate = biomass × rate ÷ 100.</p>${form('calculator', num('count', 'Fish count (required)', active()?.stock.count, 0, 10000000, false, '1') + num('avgWeightG', 'Average weight (g, required)', active()?.stock.avgWeightG, 0, 1000000) + num('rate', 'Manual rate override (%, optional; >0 to 15)', '', 0, 15, true), 'Calculate feed')}<div id="feedResult" role="status">${feedText(active())}</div><details><summary>Size-based guide and assumptions</summary><table><thead><tr><th>Average weight</th><th>Rate/day</th><th>Meals/day</th></tr></thead><tbody>${D.STAGES.map(s => `<tr><td>${s.label}</td><td>${s.rate}%</td><td>${s.meals}</td></tr>`).join('')}</tbody></table><p>All surfaces use this same version 1 size guide. It needs species-aware aquaculture review.</p></details></section><section class="panel"><h2>Species lookup</h2><label for="speciesSearch">Common name, genus or scientific name</label><input type="search" id="speciesSearch" maxlength="200"><div class="actions">${button('Search species', 'species-search')}</div><p id="speciesStatus" role="status"></p><ul id="speciesResults" class="timeline"></ul></section>`;
   }
-  // Bare "help" lands here; "help + topic" is caught by the branches above.
-  if (q.indexOf("help") >= 0 || q.indexOf("what can you do") >= 0) {
-    return "I can: 1) Tell you how much food to give ('How much feed today?'). " +
-      "2) Check your water ('Check my water'). 3) Read your tasks and money ('How do I see my profit?'). " +
-      "4) Teach you the app ('How do I start?'). Tap a green button above or type your question.";
+  const speciesSearch = PondSpecies.createSearch(SPECIES_LIST, (...args) => fetch(...args));
+  function searchSpecies(q) {
+    speciesSearch(q, (rows, status) => {
+      if (page !== 'tools' || !$('speciesResults')) return;
+      $('speciesStatus').textContent = status;
+      const unique = [...new Map(rows.map(r => [r.scientific, r])).values()];
+      $('speciesResults').innerHTML = unique.map(r => `<li class="row"><div><h3>${esc(r.common || r.scientific)}</h3><p>${esc(r.scientific)}</p></div>${button('Use in stock draft', 'use-species', `data-common="${esc(r.common)}" data-scientific="${esc(r.scientific)}"`)}</li>`).join('') || empty('No matching species. You can enter a species name directly in Ponds.');
+    });
   }
-  if (!pond) {
-    return "You have no pond yet. Open Ponds and add one (example: Home Pond), or tap 'Load demo data' to practice. Then ask me again!";
+  function settingsView() {
+    const trash = D.COLLECTIONS.flatMap(col => state.data[col].filter(r => r.deletedAt).map(r => ({ ...r, col })));
+    return head('Help & settings', 'This notebook is stored on this browser and origin. It has no account or cloud sync.') + `<section class="panel"><h2>Backup and recovery</h2><p>${store.blocked ? 'Recovery required' : opened.status === 'migration' ? 'Awaiting migration approval' : 'Local workspace readable'} • Revision ${state.revision} • ${demo ? 'Demo' : 'Farm'} workspace</p><p>Export a backup before clearing browser data or changing devices. Backups include all ponds, archives and trash; they never change your tier. Keep each download in a safe location.</p><p>Last backup download requested: ${esc(lastBackup())}</p><div class="actions">${button('Download backup', 'export')}${button('Export drafts', 'draft-export')}${button('Export original legacy data', 'legacy-export')}${button('Preview rollback snapshot', 'rollback')}${button('Download raw rollback snapshot', 'rollback-export')}</div><div class="field" style="margin-top:20px"><label for="restoreFile">Preview replacement backup (JSON, maximum 5 MiB)</label><input id="restoreFile" type="file" accept=".json,application/json"></div><div id="restorePreview" role="status">${previewHTML()}</div></section><section class="panel"><h2>Farm settings</h2>${form('settings', field('timezone', 'Farm timezone (IANA name, required)', 'text', state.settings.timezone, 'required maxlength="100"'), 'Save timezone')}</section><section class="panel"><h2>Trash</h2><p>Items stay recoverable until restored. Trashed ponds retain every dependent task, observation and transaction. There is no automatic purge.</p>${trash.map(r => `<div class="row"><div><h3>${esc(r.col === 'ponds' ? r.name : describe(r))}</h3><p>${esc(r.col)} • ${esc(r.deletedAt)}</p></div>${button('Recover', 'recover', `data-col="${r.col}" data-id="${esc(r.id)}"`)}</div>`).join('') || empty('Trash is empty.')}</section><section class="panel"><h2>Rule-based pond guide</h2><p>This guide uses keywords and your saved observations. It cannot diagnose disease.</p><form id="helper"><label for="question">Ask about feed, water, stock, tasks or backups</label><input id="question" name="question" maxlength="200" required><div class="actions"><button class="primary" type="submit">Show guidance</button></div></form><div id="helperAnswer" class="helper-answer" role="status"></div></section><section class="panel"><h2>Practice separately</h2><p>Demo records use a separate storage key. Returning to your farm leaves both workspaces intact.</p>${button(demo ? 'Return to farm notebook' : 'Open demo workspace', 'workspace')}</section>`;
   }
-  // Default on-topic fallback: summarize this pond in plain words.
-  var tt = calcTotals(state.expenses, state.sales, pond.id);
-  var up = getUpcomingTasks(state.tasks, pond.id);
-  return "Your pond " + pond.name + " has " + (pond.stock.count || "no") + " fish (" +
-    (pond.stock.common || "no name yet") + "), " + up.length + " open task" + (up.length === 1 ? "" : "s") + ", and " +
-    tt.profit + " pesos left. Ask me: 'How much feed today?', 'Check my water', or 'How do I see my profit?'";
-}
-
-function addChatMsg(who, text) {
-  var box = document.getElementById("chatMessages");
-  if (!box) return;
-  var div = document.createElement("div");
-  div.className = who === "you" ? "msg msg-you" : "msg msg-bot";
-  var whoP = document.createElement("p");
-  whoP.className = "msg-who";
-  whoP.textContent = who === "you" ? "You" : "Helper";
-  var txt = document.createElement("p");
-  txt.className = "msg-text";
-  txt.textContent = text;
-  div.appendChild(whoP);
-  div.appendChild(txt);
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
-}
-
-function askChat(question) {
-  showSection("guide");
-  addChatMsg("you", question);
-  var reply;
-  try {
-    reply = botReply(question);
-  } catch (e) {
-    reply = "Sorry, something went wrong. Try asking: 'How do I start?'";
+  function lastBackup() { try { return localStorage.getItem(store.key + '_last_export') || 'No download requested in this browser'; } catch (_) { return 'Unavailable'; } }
+  function previewHTML() { return preview ? `<h3>Replacement preview</h3><p>${esc(counts(preview))}</p><p>${preview.data.ponds.filter(p => !p.archived && !p.deletedAt).length} active ponds; tier limit ${D.limit(tier)}. Over-limit data will be retained, with creation/reactivation blocked. This replaces only the ${demo ? 'demo' : 'farm'} workspace and retains a rollback snapshot. Existing drafts will stay available.</p><div class="actions">${button('Restore this backup', 'restore', '', 'primary')}${button('Cancel restore', 'restore-cancel')}</div>` : ''; }
+  function plansView() { return head('Plan preview', 'Browser-selected tiers only. No billing, account or payment processing.') + `<div class="cards">${[['start', 'PondStart', '1 active pond'], ['pro', 'PondPro', '5 active ponds'], ['elite', 'PondElite', 'Unlimited active ponds']].map(([id, name, benefit]) => `<section class="panel ${tier === id ? 'plan-selected' : ''}"><h2>${name}</h2><p>${benefit}</p><p>All tiers: observations, tasks, feed calculator, readable history, backup and recovery.</p><p>${id === 'start' ? 'Existing money records remain readable.' : 'Money entry and correction.'}</p>${button(tier === id ? 'Current preview' : 'Choose ' + name, 'plan', `data-tier="${id}" ${tier === id ? 'disabled' : ''}`)}</section>`).join('')}</div><p class="muted" style="margin-top:24px">Changing tiers preserves all saved data. Limits apply to creation and reactivation; replacement restores preserve over-limit ponds.</p>`; }
+  function moreView() { return head('More', 'Tools and settings for your pond notebook.') + `<div class="panel actions">${link('Money', 'money')}${link('Tools', 'tools')}${link('Help & settings', 'settings')}${link('Plan preview', 'plans')}</div>`; }
+  function formError(form, error) {
+    form.querySelectorAll('.field-error').forEach(e => e.remove()); form.querySelectorAll('[aria-invalid]').forEach(e => { e.removeAttribute('aria-invalid'); e.removeAttribute('aria-describedby'); });
+    const summary = form.querySelector('.form-error'); summary.hidden = false; summary.textContent = 'Not saved. ' + error.message;
+    const input = error.field && form.elements.namedItem(error.field);
+    if (input) { input.setAttribute('aria-invalid', 'true'); const help = document.createElement('span'); help.id = input.id + '-error'; help.className = 'field-error'; help.textContent = error.message; input.setAttribute('aria-describedby', help.id); input.after(help); }
+    summary.focus(); notify('Not saved. Your draft is preserved. ' + error.message, true); capture();
   }
-  setTimeout(function () { addChatMsg("bot", reply); }, 250);
-}
-
-function sendChat(event) {
-  event.preventDefault();
-  var input = document.getElementById("chatInput");
-  var q = (input.value || "").trim();
-  if (!q) return false;
-  input.value = "";
-  addChatMsg("you", q);
-  var reply;
-  try {
-    reply = botReply(q);
-  } catch (e) {
-    reply = "Sorry, something went wrong. Try asking: 'How do I start?'";
-  }
-  setTimeout(function () { addChatMsg("bot", reply); }, 250);
-  return false;
-}
-
-function initChat() {
-  var box = document.getElementById("chatMessages");
-  if (!box || box.children.length) return;
-  addChatMsg("bot", "Hello! I am your PondWise Helper. I only answer about PondWise and fishpond care. " +
-    "Ask me like: 'How much feed today?' or tap a green button above. How can I help?");
-}
-
-// Old Guide button kept for compatibility: opens chat with a water summary.
-function showAdvice() {
-  askChat("Check my water");
-}
-
-// ---------- 10. Backup + demo ----------
-
-function exportData() {
-  if (!canUseBackup()) { showSection("plans"); return; }
-  var blob = new Blob([localStorage.getItem(STORE_KEY) || "{}"], { type: "application/json" });
-  var a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "pondwise-backup.json";
-  a.click();
-}
-
-function importData(event) {
-  if (!canUseBackup()) { showSection("plans"); return; }
-  var file = event.target.files[0];
-  if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function () {
+  function values(form) { return Object.fromEntries(new FormData(form)); }
+  function n(value) { return value === '' || value === undefined ? null : Number(value); }
+  document.addEventListener('input', event => { const form = event.target.closest('form[data-draft]'); if (form) { form.dataset.dirty = 'true'; capture(); } });
+  document.addEventListener('submit', event => {
+    event.preventDefault(); const form = event.target; const v = values(form);
     try {
-      var data = JSON.parse(reader.result);
-      if (!data.ponds) throw new Error("bad file");
-      saveData(data);
-      refresh();
-    } catch (e) {
-      alert("That file is not a PondWise backup.");
+      if (form.id === 'helper') { helper(v.question); return; }
+      if (form.id === 'calculator') { const r = D.recommendation(n(v.count), n(v.avgWeightG), n(v.rate)); if (r.kg === undefined) D.fail('count', r.warnings[0]); $('feedResult').innerHTML = feedText({ stock: { count: n(v.count), avgWeightG: n(v.avgWeightG) } }, n(v.rate)); return; }
+      capture(); const next = clone(state), p = active(), timestamp = now();
+      if (form.id === 'settings') next.settings.timezone = D.timezone(v.timezone.trim());
+      else if (form.id === 'pond-create') {
+        if (!D.canActivate(next.data, tier)) throw new Error('Active pond limit reached. Archive a pond or change the preview tier.');
+        const pond = { id: crypto.randomUUID(), name: v.name, size: n(v.size), notes: v.notes, archived: false, deletedAt: null, createdAt: timestamp, updatedAt: timestamp, stock: { common: '', scientific: '', count: null, avgWeightG: null, updatedAt: null } };
+        next.data.ponds.push(pond); next.data.activePondId = pond.id;
+      } else if (form.id === 'pond-edit') {
+        requirePond(); const target = next.data.ponds.find(r => r.id === p.id);
+        Object.assign(target, { name: v.name, size: n(v.size), notes: v.notes, updatedAt: timestamp, stock: { common: v.common, scientific: v.scientific, count: n(v.count), avgWeightG: n(v.avgWeightG), updatedAt: timestamp } });
+      } else {
+        const col = form.id.slice(6); if (!D.COLLECTIONS.slice(1).includes(col)) throw new Error('Unknown form.');
+        if (['expenses', 'sales'].includes(col) && tier === 'start') throw new Error('Choose Pro or Elite preview to change money records.');
+        const id = form.dataset.editing, old = id ? next.data[col].find(r => r.id === id) : null;
+        if (id && !old) throw new Error('The record being edited no longer exists.');
+        if (!old) requirePond();
+        const row = { ...(old || { id: crypto.randomUUID(), pondId: p.id, createdAt: timestamp, deletedAt: null }), updatedAt: timestamp, date: v.date };
+        if (col === 'tasks') Object.assign(row, { title: v.title, type: v.type, done: old?.done || false, completedAt: old?.completedAt || null });
+        if (col === 'feedLogs') Object.assign(row, { kg: v.skipped ? 0 : n(v.kg), skipped: !!v.skipped, notes: v.notes });
+        if (col === 'waterLogs') Object.assign(row, { ph: n(v.ph), temp: n(v.temp), notes: v.notes });
+        if (['healthLogs', 'maintLogs'].includes(col)) row.note = v.note;
+        if (['expenses', 'sales'].includes(col)) Object.assign(row, { item: v.item, category: v.category, amountCentavos: D.money(v.amount) });
+        if (old) next.data[col] = next.data[col].map(r => r.id === id ? row : r); else next.data[col].push(row);
+      }
+      // Remove the old pond's draft only after the write succeeds, even when creating a new active pond.
+      const key = draftKey(form), savedCol = form.id.startsWith('entry-') ? form.id.slice(6) : null, savedPondId = savedCol && form.dataset.editing ? next.data[savedCol].find(r => r.id === form.dataset.editing)?.pondId : next.data.activePondId; commit(next, 'Saved ' + (savedCol ? labels[savedCol].toLowerCase() + ' for ' + pondName(savedPondId) : 'changes') + '.', form); delete drafts[key];
+      day = D.today(state.settings.timezone); render(false);
+    } catch (e) { formError(form, e); }
+  });
+  async function download(text, name) { const url = URL.createObjectURL(new Blob([text], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  async function action(el) {
+    const a = el.dataset.action, id = el.dataset.id, col = el.dataset.col;
+    capture();
+    if (a === 'add-record') { if (page === 'records') { $('recordType').focus(); } else location.hash = 'records'; return; }
+    if (a === 'workspace') { editing = null; preview = null; openWorkspace(!demo); if (demo && opened.status === 'new') seedDemo(); render(false); notify(demo ? 'Opened the separate demo workspace.' : 'Returned to your farm notebook.'); return; }
+    if (a === 'export') { if (store.blocked) throw new Error('Export raw workspace while in recovery.'); await download(store.export(), `pondwise-${demo ? 'demo' : 'farm'}-${day}-r${state.revision}.json`); try { localStorage.setItem(store.key + '_last_export', now()); } catch (_) { /* export already requested */ } notify('Backup download requested. Check your downloads and keep the file safe.'); return; }
+    if (a === 'raw' || a === 'legacy-export') { const raw = localStorage.getItem(a === 'legacy-export' || opened.status === 'migration' ? S.LEGACY : store.recoveryKey); if (raw === null) throw new Error('No original data exists for this key.'); download(raw, 'pondwise-original-' + day + '.json'); return; }
+    if (a === 'draft-export') { download(JSON.stringify(drafts, null, 2), 'pondwise-drafts-' + day + '.json'); notify('Draft download requested. This is a reference file, not a restorable notebook backup.'); return; }
+    if (a === 'reload') { openWorkspace(demo); render(false); notify('Saved workspace reloaded. Drafts retained.'); return; }
+    if (a === 'migrate') { commit(state, 'Migration verified. Original legacy data remains available.', null, true); return; }
+    if (a === 'rollback-export') { const raw = localStorage.getItem(store.key + '_rollback'); if (raw === null) throw new Error('No rollback snapshot exists.'); download(raw, 'pondwise-rollback-' + day + '.json'); return; }
+    if (a === 'rollback') { restoreGeneration++; preview = store.rollback(); render(); return; }
+    if (a === 'restore-cancel') { restoreGeneration++; preview = null; render(); return; }
+    if (a === 'restore') { if (!preview) return; commit(preview, 'Backup restored and verified. Previous workspace retained as rollback.', null, true); preview = null; day = D.today(state.settings.timezone); render(); return; }
+    if (a === 'plan') { localStorage.setItem(planKey(), D.plan(el.dataset.tier)); tier = D.plan(el.dataset.tier); render(); notify('Preview tier changed. All existing data was kept.'); return; }
+    if (a === 'discard') { const form = $(el.dataset.form); delete drafts[draftKey(form)]; form.dataset.dirty = 'false'; editing = null; render(false); notify('Draft discarded.'); return; }
+    if (a === 'species-search') { searchSpecies($('speciesSearch').value); return; }
+    if (a === 'use-species') {
+      requirePond(); const key = [demo ? 'demo' : 'farm', state.data.activePondId, 'pond-edit'].join(':');
+      const p = active(); const values = drafts[key]?.values || { name: p.name, size: p.size ?? '', notes: p.notes, count: p.stock.count ?? '', avgWeightG: p.stock.avgWeightG ?? '' };
+      drafts[key] = { values: { ...values, common: el.dataset.common, scientific: el.dataset.scientific }, editing: '' }; location.hash = 'ponds'; notify('Species added to this pond’s stock draft. Save it in Ponds.'); return;
     }
-  };
-  reader.readAsText(file);
-}
-
-function demoDate(offsetDays) {
-  var d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  return d.toISOString().slice(0, 10);
-}
-
-function loadDemo() {
-  var state = blankState();
-  var p1 = makeId() + "1";
-  var p2 = makeId() + "2";
-  var p3 = makeId() + "3";
-  // 3 ponds: small backyard, main pond, big riverside.
-  state.ponds.push({
-    id: p1, name: "Home Pond", size: "500", notes: "Near the house, easy to watch",
-    stock: { common: "Nile tilapia", scientific: "Oreochromis niloticus", count: "800", avgWeightG: "150" }
-  });
-  state.ponds.push({
-    id: p2, name: "River Side", size: "1000", notes: "Big pond near the river",
-    stock: { common: "African catfish", scientific: "Clarias gariepinus", count: "1200", avgWeightG: "90" }
-  });
-  state.ponds.push({
-    id: p3, name: "Backyard Small", size: "200", notes: "Trial pond for carp",
-    stock: { common: "Common carp", scientific: "Cyprinus carpio", count: "300", avgWeightG: "250" }
-  });
-  state.activePondId = p1;
-  // Tasks: past done, today, and upcoming across ponds.
-  state.tasks.push({ id: makeId() + "t1", pondId: p1, title: "Morning feeding", type: "feeding", date: demoDate(0), done: false });
-  state.tasks.push({ id: makeId() + "t2", pondId: p1, title: "Check water color", type: "inspection", date: demoDate(0), done: false });
-  state.tasks.push({ id: makeId() + "t3", pondId: p1, title: "Clean inlet screen", type: "cleaning", date: demoDate(1), done: false });
-  state.tasks.push({ id: makeId() + "t4", pondId: p1, title: "Evening feeding", type: "feeding", date: demoDate(-1), done: true });
-  state.tasks.push({ id: makeId() + "t5", pondId: p2, title: "Morning feeding catfish", type: "feeding", date: demoDate(0), done: false });
-  state.tasks.push({ id: makeId() + "t6", pondId: p2, title: "Fix broken net corner", type: "repair", date: demoDate(2), done: false });
-  state.tasks.push({ id: makeId() + "t7", pondId: p2, title: "Count weak fish", type: "inspection", date: demoDate(-2), done: true });
-  state.tasks.push({ id: makeId() + "t8", pondId: p3, title: "Weigh 10 sample carp", type: "inspection", date: demoDate(3), done: false });
-  // A week of feeding for Home Pond + a few for others.
-  var feeds = ["3.5", "3.6", "3.4", "3.8", "3.6", "3.7", "3.6"];
-  var i;
-  for (i = 0; i < feeds.length; i++) {
-    state.feedLogs.push({ id: makeId() + "f" + i, pondId: p1, date: demoDate(-6 + i), kg: feeds[i] });
-  }
-  state.feedLogs.push({ id: makeId() + "f20", pondId: p2, date: demoDate(-1), kg: "5.2" });
-  state.feedLogs.push({ id: makeId() + "f21", pondId: p2, date: demoDate(0), kg: "5.4" });
-  state.feedLogs.push({ id: makeId() + "f30", pondId: p3, date: demoDate(0), kg: "1.9" });
-  // Water: one good, one low-pH warning, one warm.
-  state.waterLogs.push({ id: makeId() + "w1", pondId: p1, date: demoDate(-6), temp: "29", ph: "7.8", notes: "Clear, normal" });
-  state.waterLogs.push({ id: makeId() + "w2", pondId: p1, date: demoDate(-2), temp: "28", ph: "7.5", notes: "Clear after light rain" });
-  state.waterLogs.push({ id: makeId() + "w3", pondId: p1, date: demoDate(0), temp: "28", ph: "7.4", notes: "Clear, fish active" });
-  state.waterLogs.push({ id: makeId() + "w4", pondId: p2, date: demoDate(0), temp: "30", ph: "6.1", notes: "A bit muddy, will change water" });
-  state.waterLogs.push({ id: makeId() + "w5", pondId: p3, date: demoDate(-1), temp: "31", ph: "8.2", notes: "Greenish, added shade" });
-  // Health + maintenance.
-  state.healthLogs.push({ id: makeId() + "h1", pondId: p1, date: demoDate(-2), note: "Active, eating well" });
-  state.healthLogs.push({ id: makeId() + "h2", pondId: p1, date: demoDate(0), note: "All good, no floaters" });
-  state.healthLogs.push({ id: makeId() + "h3", pondId: p2, date: demoDate(0), note: "3 fish slow, watching closely" });
-  state.healthLogs.push({ id: makeId() + "h4", pondId: p3, date: demoDate(-1), note: "Carp jumping at dusk, normal" });
-  state.maintLogs.push({ id: makeId() + "m1", pondId: p1, date: demoDate(-3), note: "Cleaned inlet screen" });
-  state.maintLogs.push({ id: makeId() + "m2", pondId: p2, date: demoDate(-1), note: "Patched net corner" });
-  state.maintLogs.push({ id: makeId() + "m3", pondId: p3, date: demoDate(-5), note: "Added bamboo shade" });
-  // Money: realistic expenses + sales per pond.
-  state.expenses.push({ id: makeId() + "e1", pondId: p1, date: demoDate(-10), item: "Tilapia fingerlings x800", amount: "2400" });
-  state.expenses.push({ id: makeId() + "e2", pondId: p1, date: demoDate(-6), item: "Feeds 25kg", amount: "1250" });
-  state.expenses.push({ id: makeId() + "e3", pondId: p1, date: demoDate(-2), item: "Feeds 25kg", amount: "1250" });
-  state.expenses.push({ id: makeId() + "e4", pondId: p1, date: demoDate(-4), item: "Net repair + labor", amount: "500" });
-  state.expenses.push({ id: makeId() + "e5", pondId: p2, date: demoDate(-8), item: "Catfish fingerlings x1200", amount: "3600" });
-  state.expenses.push({ id: makeId() + "e6", pondId: p2, date: demoDate(-3), item: "Feeds 50kg", amount: "2500" });
-  state.expenses.push({ id: makeId() + "e7", pondId: p2, date: demoDate(-1), item: "Lime + salt", amount: "350" });
-  state.expenses.push({ id: makeId() + "e8", pondId: p3, date: demoDate(-12), item: "Carp fingerlings x300", amount: "900" });
-  state.expenses.push({ id: makeId() + "e9", pondId: p3, date: demoDate(-5), item: "Feeds 10kg", amount: "520" });
-  state.sales.push({ id: makeId() + "s1", pondId: p1, date: demoDate(-3), item: "Tilapia 10kg to neighbor", amount: "1500" });
-  state.sales.push({ id: makeId() + "s2", pondId: p1, date: demoDate(0), item: "Tilapia 20kg to market", amount: "3000" });
-  state.sales.push({ id: makeId() + "s3", pondId: p2, date: demoDate(-1), item: "Catfish 15kg to buyer", amount: "2700" });
-  state.sales.push({ id: makeId() + "s4", pondId: p3, date: demoDate(-2), item: "Carp 5kg tasting sale", amount: "750" });
-  saveData(state);
-  refresh();
-  setDefaultDates();
-}
-
-// ---------- 11. Render everything ----------
-
-function refresh() {
-  var state = loadData();
-  renderPondPicker(state);
-  renderPonds(state);
-  renderTasks(state);
-  renderCalendar(state);
-  renderFeedGuide();
-  renderRations(state);
-  renderRecords(state);
-  renderFinance(state);
-  renderDashboard(state);
-  renderSpeciesRows(document.getElementById("speciesLocal"), SPECIES_LIST, "built-in");
-  renderPlan();
-}
-
-// ---------- 8. Subscription plans (proposal, saved in this browser) ----------
-
-var PLAN_KEY = "pondwise_plan";
-var PLAN_NAMES = { start: "PondStart (free)", pro: "PondPro", elite: "PondElite" };
-var POND_LIMITS = { start: 1, pro: 5, elite: Infinity };
-
-function getPlan() {
-  try {
-    return localStorage.getItem(PLAN_KEY) || "start";
-  } catch (e) {
-    return "start";
-  }
-}
-
-// Tier gates. Pond limits block addPond; money, rations, and backup swap
-// their panels for an upgrade lock (renderPlan) and refuse saves too.
-function pondLimit() {
-  var p = getPlan();
-  return POND_LIMITS[p] == null ? 1 : POND_LIMITS[p];
-}
-
-function canUseMoney() {
-  var p = getPlan();
-  return p === "pro" || p === "elite";
-}
-
-function canUseRations() {
-  return canUseMoney();
-}
-
-function canUseBackup() {
-  return getPlan() === "elite";
-}
-
-function choosePlan(name) {
-  try {
-    localStorage.setItem(PLAN_KEY, name);
-  } catch (e) {
-    // Private mode: choice just won't persist.
-  }
-  refresh();
-}
-
-function setLocked(bodyId, lockId, allowed) {
-  var body = document.getElementById(bodyId);
-  var lock = document.getElementById(lockId);
-  if (body) body.hidden = !allowed;
-  if (lock) lock.hidden = allowed;
-}
-
-function renderPlan() {
-  var current = getPlan();
-  if (!PLAN_NAMES[current]) current = "start";
-  var label = document.getElementById("planCurrent");
-  if (label) label.textContent = "You are on " + PLAN_NAMES[current] + ".";
-  var btns = document.querySelectorAll(".plan-btn");
-  var i;
-  for (i = 0; i < btns.length; i++) {
-    var isCurrent = btns[i].getAttribute("data-plan") === current;
-    btns[i].disabled = isCurrent;
-    btns[i].textContent = isCurrent ? "Current plan" : "Choose " + btns[i].getAttribute("data-label");
-  }
-  setLocked("financeBody", "financeLock", canUseMoney());
-  setLocked("rationPanel", "rationLock", canUseRations());
-  setLocked("backupBody", "backupLock", canUseBackup());
-}
-
-// Pond usage note under the add-pond form. Existing ponds always stay;
-// the limit only blocks adding more (downgrades included).
-function renderPondNote(state, blocked) {
-  var note = document.getElementById("pondLimitNote");
-  var btn = document.getElementById("pondUpgradeBtn");
-  if (!note) return;
-  var plan = getPlan();
-  var limit = pondLimit();
-  var name = PLAN_NAMES[plan] || PLAN_NAMES.start;
-  var maxed = state.ponds.length >= limit;
-  if (blocked) {
-    note.textContent = "Limit reached: " + name + " allows " + limit +
-      " pond" + (limit === 1 ? "" : "s") + ". Upgrade to add more.";
-  } else if (limit === Infinity) {
-    note.textContent = "Using " + state.ponds.length + " ponds (" + name + " - unlimited).";
-  } else {
-    note.textContent = "Using " + state.ponds.length + " of " + limit + " ponds (" + name + ")." +
-      (maxed ? " Upgrade to add more." : "");
-  }
-  if (btn) btn.hidden = !maxed;
-}
-
-function renderCalendar(state) {
-  calEnsure();
-  var label = document.getElementById("calLabel");
-  var grid = document.getElementById("calGrid");
-  if (!label || !grid) return;
-  var y = calCursor.y;
-  var m = calCursor.m;
-  label.textContent = new Date(y, m, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  grid.innerHTML = "";
-  var first = new Date(y, m, 1).getDay();
-  var days = new Date(y, m + 1, 0).getDate();
-  var prevDays = new Date(y, m, 0).getDate();
-  var today = todayStr();
-  var tasks = state.tasks.filter(function (t) { return t.pondId === state.activePondId; });
-  var i, d, dateStr, inMonth;
-  for (i = 0; i < 42; i++) {
-    if (i < first) {
-      d = prevDays - first + 1 + i;
-      inMonth = false;
-      dateStr = ymd(y, m - 1, d);
-    } else if (i < first + days) {
-      d = i - first + 1;
-      inMonth = true;
-      dateStr = ymd(y, m, d);
-    } else {
-      d = i - first - days + 1;
-      inMonth = false;
-      dateStr = ymd(y, m + 1, d);
+    if (a === 'filter' || a === 'filter-reset') {
+      const kind = el.dataset.kind, f = filters[kind];
+      if (a === 'filter-reset') Object.assign(f, { scope: '', q: '', type: '', from: '', to: '', page: 1 });
+      else { const container = el.closest('[data-filters]'); container.querySelectorAll('[data-filter]').forEach(i => { f[i.dataset.filter] = i.value; }); if ((f.from && !D.validDate(f.from)) || (f.to && !D.validDate(f.to)) || (f.from && f.to && f.from > f.to)) throw new Error('Choose a valid date range with From before Through.'); f.page = 1; }
+      render(); return;
     }
-    grid.appendChild(calCell(dateStr, d, inMonth, dateStr === today, dateStr === calSelected, tasksOn(tasks, dateStr)));
+    if (a === 'page') { filters[el.dataset.kind].page += Number(el.dataset.step); render(); return; }
+    if (a === 'record-type') { recordType = col; editing = null; location.hash = 'records'; return; }
+    if (a === 'money-type') { moneyType = col; editing = null; render(); return; }
+    if (a === 'day' || a === 'month' || a === 'today') {
+      if (a === 'day') selectedDay = el.dataset.date;
+      if (a === 'month') { const [y, m] = cursor.split('-').map(Number); const target = calendarUTC(y, m - 1 + Number(el.dataset.step), 1).toISOString().slice(0, 7); if (!/^\d{4}-\d{2}$/.test(target) || target < '0001-01' || target > '9999-12') throw new Error('Calendar supports years 0001–9999.'); cursor = target; }
+      if (a === 'today') { selectedDay = day; cursor = day.slice(0, 7); }
+      render(); const details = document.querySelector('details'); if (details) details.open = true; [...document.querySelectorAll('[data-action]')].find(e => e.dataset.action === a && (a !== 'month' || e.dataset.step === el.dataset.step) && (a !== 'day' || e.dataset.date === selectedDay))?.focus({ preventScroll: true });
+      if (a !== 'month') { const input = document.querySelector('#entry-tasks [name=date]'); if (input) { input.value = selectedDay; const form = input.form; form.dataset.dirty = 'true'; capture(); } } return;
+    }
+    if (a === 'edit') {
+      if (!D.COLLECTIONS.slice(1).includes(col)) throw new Error('Unknown collection.');
+      if (['expenses', 'sales'].includes(col) && tier === 'start') throw new Error('Choose Pro or Elite preview to correct money records.');
+      const row = state.data[col].find(r => r.id === id); if (!row) throw new Error('Record not found.');
+      const target = col === 'tasks' ? 'tasks' : ['expenses', 'sales'].includes(col) ? 'money' : 'records';
+      const key = [demo ? 'demo' : 'farm', state.data.activePondId || 'none', 'entry-' + col].join(':');
+      if (drafts[key] && !confirm('Replace the existing ' + labels[col] + ' draft with this record for editing?')) return;
+      delete drafts[key]; document.querySelectorAll('form[data-draft]').forEach(f => { if (draftKey(f) === key) f.dataset.dirty = 'false'; }); editing = { col, id }; if (['expenses', 'sales'].includes(col)) moneyType = col; else if (col !== 'tasks') recordType = col;
+      page = target; if (location.hash !== '#' + target) { location.hash = target; } else render(false);
+      return;
+    }
+    const next = clone(state);
+    if (a === 'select-pond') { if (!next.data.ponds.some(p => p.id === id && !p.archived && !p.deletedAt)) throw new Error('Select an active pond.'); next.data.activePondId = id; editing = null; }
+    else if (a === 'archive') { const p = next.data.ponds.find(p => p.id === id); if (!p) throw new Error('Pond not found.'); if (p.archived && !D.canActivate(next.data, tier)) throw new Error('Pond limit reached. Archive another pond or change preview tier.'); p.archived = !p.archived; p.updatedAt = now(); }
+    else if (a === 'task-toggle') { next.data.tasks = next.data.tasks.map(t => t.id === id ? D.toggleTask(t) : t); }
+    else if (a === 'trash' || a === 'recover') {
+      if (a === 'trash' && col === 'ponds') { const count = D.COLLECTIONS.slice(1).reduce((n, key) => n + state.data[key].filter(r => r.pondId === id).length, 0); if (!confirm(`Move this pond with ${count} dependent records to recoverable trash?`)) return; }
+      commit(D.setDeleted(next, col, id, a === 'trash', tier), a === 'trash' ? 'Moved to trash. Recover it in Help & settings.' : 'Recovered from trash.'); if (a === 'trash') $('notice').insertAdjacentHTML('beforeend', button('Undo', 'recover', `data-col="${col}" data-id="${esc(id)}"`)); return;
+    } else return;
+    commit(next, a === 'task-toggle' ? 'Task updated. No observation record was created.' : 'Pond context updated. Drafts remain with their original pond.');
   }
-  var hint = document.getElementById("calHint");
-  if (hint) hint.textContent = "Adding tasks for " + calSelected + ". Tap another date to change it.";
-}
-
-function calCell(dateStr, dayNum, inMonth, isToday, isSel, dayTasks) {
-  var b = document.createElement("button");
-  b.type = "button";
-  b.className = "cal-day" + (inMonth ? "" : " dim") + (isToday ? " today" : "") + (isSel ? " sel" : "");
-  b.setAttribute("aria-label", dateStr + (dayTasks.length ? (", " + dayTasks.length + " tasks") : ", no tasks"));
-  b.onclick = function () { calPick(dateStr); };
-  var num = document.createElement("span");
-  num.className = "cal-num";
-  num.textContent = String(dayNum);
-  b.appendChild(num);
-  var dots = document.createElement("span");
-  dots.className = "cal-dots";
-  dots.setAttribute("aria-hidden", "true");
-  dayTasks.slice(0, 3).forEach(function (t) {
-    var s = document.createElement("i");
-    s.className = t.done ? "cal-dot done" : "cal-dot todo";
-    dots.appendChild(s);
+  document.addEventListener('click', event => { if (event.target.closest('.skip')) { event.preventDefault(); $('main').focus(); return; } const el = event.target.closest('[data-action]'); if (el) action(el).catch(e => notify('Not saved. ' + e.message, true)); });
+  document.addEventListener('change', async event => {
+    let restoreToken = null;
+    const targetStore = store;
+    try {
+      if (event.target.id === 'calendarDate') { if (!D.validDate(event.target.value)) throw new Error('Choose a valid task date.'); selectedDay = event.target.value; cursor = selectedDay.slice(0, 7); const input = document.querySelector('#entry-tasks [name=date]'); if (input) { input.value = selectedDay; input.form.dataset.dirty = 'true'; } render(); document.querySelector('details').open = true; }
+      if (event.target.id === 'pondContext') { capture(); const next = clone(state); next.data.activePondId = event.target.value; editing = null; commit(next, 'Active pond changed. Drafts stay with their original pond.'); }
+      if (event.target.id === 'recordType') { capture(); recordType = event.target.value; editing = null; render(false); }
+      if (event.target.id === 'restoreFile') {
+        const file = event.target.files[0]; if (!file) return; restoreToken = ++restoreGeneration; preview = null;
+        if (file.size > 5 * 1024 * 1024) throw new Error('Backup exceeds the 5 MiB limit.');
+        $('restorePreview').textContent = 'Reading and validating backup…'; let raw;
+        try { raw = await file.text(); } catch (_) { throw new Error('Could not read the selected file. Select it again.'); }
+        if (restoreToken !== restoreGeneration || store !== targetStore || page !== 'settings') return;
+        preview = D.parse(raw); $('restorePreview').innerHTML = previewHTML();
+      }
+    } catch (e) { if (restoreToken !== null && (restoreToken !== restoreGeneration || store !== targetStore || page !== 'settings')) return; if ($('restorePreview') && event.target.id === 'restoreFile') $('restorePreview').textContent = 'Backup rejected. ' + e.message; notify('Not saved. ' + e.message, true); nav(); }
   });
-  if (dayTasks.length > 3) {
-    var more = document.createElement("em");
-    more.textContent = "+" + (dayTasks.length - 3);
-    dots.appendChild(more);
+  function helper(q) {
+    const p = active(), text = q.toLowerCase(), box = $('helperAnswer');
+    let answer = `<p>Context: ${esc(p?.name || 'No active pond')}; farm date ${day}.</p>`;
+    if (/sick|die|dying|dead|disease|health|gasp/.test(text)) answer += '<p>Check fish behavior, oxygen availability and recent water observations. Pause automatic feeding decisions when fish are distressed. Contact local aquaculture support for assessment before treatment.</p>' + waterText(p ? D.latestWater(state.data, p.id) : null);
+    else if (/feed|ration|food/.test(text)) answer += feedText(p);
+    else if (/water|ph|temperature/.test(text)) answer += waterText(p ? D.latestWater(state.data, p.id) : null);
+    else if (/stock|fish|species/.test(text)) answer += '<p>Save a count and average weight in Ponds. This is a snapshot, not a stocking-cycle ledger.</p>' + link('Open pond stock', 'ponds');
+    else if (/task|work/.test(text)) answer += '<p>Tasks can be due in the future. Completing one saves its completion time and leaves observations separate.</p>' + link('Open tasks', 'tasks');
+    else if (/backup|restore|export/.test(text)) answer += '<p>Use Backup and recovery above. Preview a restore before committing; the previous workspace is retained as rollback.</p>';
+    else answer += '<p>I can show saved pond context and guidance about feed, water, stock, tasks and backups. Try “latest water” or “feed estimate”.</p>';
+    box.innerHTML = answer;
   }
-  b.appendChild(dots);
-  return b;
-}
-
-function renderFeedGuide() {
-  var body = document.getElementById("feedGuideBody");
-  if (!body) return;
-  body.innerHTML = "";
-  FEED_STAGES.forEach(function (s) {
-    var tr = document.createElement("tr");
-    var cells = [
-      { text: s.size, num: false },
-      { text: s.feed, num: false },
-      { text: s.protein, num: true },
-      { text: s.rate + "%", num: true },
-      { text: s.meals, num: true }
-    ];
-    cells.forEach(function (c) {
-      var td = document.createElement("td");
-      td.textContent = c.text;
-      if (c.num) td.className = "num";
-      tr.appendChild(td);
+  function seedDemo() {
+    const next = D.blank(), timestamp = now();
+    [['Tilapia pond', 'Nile tilapia', 800, 150], ['Catfish pond', 'African catfish', 1200, 90], ['Carp pond', 'Common carp', 300, 250]].forEach(([name, common, count, avgWeightG]) => next.data.ponds.push({ id: crypto.randomUUID(), name, notes: 'Practice pond', size: 400, archived: false, deletedAt: null, createdAt: timestamp, updatedAt: timestamp, stock: { common, scientific: '', count, avgWeightG, updatedAt: timestamp } }));
+    next.data.activePondId = next.data.ponds[0].id;
+    next.data.tasks.push({ id: crypto.randomUUID(), pondId: next.data.activePondId, title: 'Observe fish appetite', type: 'inspection', date: day, done: false, completedAt: null, createdAt: timestamp, updatedAt: timestamp, deletedAt: null });
+    next.data.waterLogs.push({ id: crypto.randomUUID(), pondId: next.data.activePondId, date: day, ph: 7.2, temp: 28, notes: 'Demo observation', createdAt: timestamp, updatedAt: timestamp, deletedAt: null });
+    state = store.commit(next); opened = { status: 'ready' };
+  }
+  function ensureFocusVisible() {
+    const control = document.activeElement;
+    if (!control?.matches('input,textarea,select,button,a') || control.closest('.sidebar,.mobile-nav,.context')) return;
+    requestAnimationFrame(() => {
+      const rect = control.getBoundingClientRect(), top = document.querySelector('.context').getBoundingClientRect().bottom;
+      const bar = $('mobileNav'), navHeight = getComputedStyle(bar).display === 'none' ? 0 : bar.getBoundingClientRect().height;
+      const bottom = Math.min(innerHeight, window.visualViewport ? window.visualViewport.height + window.visualViewport.offsetTop : innerHeight) - navHeight;
+      if (rect.top < top + 8 || rect.bottom > bottom - 8) control.scrollIntoView({ block: 'center', behavior: 'instant' });
     });
-    body.appendChild(tr);
-  });
-}
-
-function renderRations(state) {
-  var box = document.getElementById("rationList");
-  if (!box) return;
-  box.innerHTML = "";
-  if (!state.ponds.length) {
-    box.innerHTML = "<p class='hint'>No ponds yet. Add one in Ponds first.</p>";
-    return;
   }
-  state.ponds.forEach(function (p) {
-    var row = document.createElement("div");
-    row.className = "ration-row";
-    var r = (p.stock.count && p.stock.avgWeightG) ? pondDailyRation(p.stock.count, p.stock.avgWeightG) : null;
-    var left = document.createElement("div");
-    left.className = "ration-pond";
-    var nm = document.createElement("strong");
-    nm.textContent = p.name;
-    var pop = document.createElement("small");
-    pop.textContent = p.stock.count ? (p.stock.count + " fish x " + p.stock.avgWeightG + " g") : "No fish saved yet";
-    left.appendChild(nm);
-    left.appendChild(pop);
-    var right = document.createElement("div");
-    right.className = "ration-val";
-    if (r) {
-      var amt = document.createElement("strong");
-      amt.textContent = r.kg.toFixed(2) + " kg/day";
-      var feed = document.createElement("small");
-      feed.textContent = r.stage.feed + " - " + r.stage.meals + " meals";
-      right.appendChild(amt);
-      right.appendChild(feed);
-    } else {
-      var none = document.createElement("small");
-      none.textContent = "Save fish in Ponds to see its ration";
-      right.appendChild(none);
-    }
-    row.appendChild(left);
-    row.appendChild(right);
-    box.appendChild(row);
-  });
-}
-
-function fillPondSelect(elId, state) {
-  var sel = document.getElementById(elId);
-  if (!sel) return;
-  sel.innerHTML = "";
-  if (!state.ponds.length) {
-    var opt = document.createElement("option");
-    opt.textContent = "No ponds yet";
-    sel.appendChild(opt);
-    return;
-  }
-  state.ponds.forEach(function (p) {
-    var o = document.createElement("option");
-    o.value = p.id;
-    o.textContent = p.name;
-    if (p.id === state.activePondId) o.selected = true;
-    sel.appendChild(o);
-  });
-}
-
-function renderPondPicker(state) {
-  fillPondSelect("pondSelect", state);
-  fillPondSelect("pondSelectM", state);
-}
-
-function escHtml(s) {
-  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-  });
-}
-
-function renderPonds(state) {
-  var box = document.getElementById("pondList");
-  box.innerHTML = "";
-  if (!state.ponds.length) {
-    box.innerHTML = "<p class='hint'>No ponds yet. Add your first pond below, or load demo data to practice.</p>";
-  }
-  state.ponds.forEach(function (p) {
-    var isActive = (p.id === state.activePondId);
-    var card = document.createElement("div");
-    card.className = isActive ? "pond-card selected" : "pond-card";
-    card.setAttribute("role", "listitem");
-    if (isActive) {
-      var badge = document.createElement("span");
-      badge.className = "tag tag-picked";
-      badge.textContent = "Picked";
-      card.appendChild(badge);
-    }
-    // Decorative cover: same simple pond art on every card.
-    var img = document.createElement("img");
-    img.src = "assets/pond.svg";
-    img.alt = "";
-    card.appendChild(img);
-    var stockLine = (p.stock.common || "No fish yet") + (p.stock.count ? (" x " + p.stock.count) : "");
-    var body = document.createElement("div");
-    body.className = "pond-body";
-    body.innerHTML =
-      "<p class='pond-name'>" + escHtml(p.name) + "</p>" +
-      "<p class='pond-meta'>" + escHtml(p.size || "-") + " sqm</p>" +
-      "<p class='pond-stock'>" + escHtml(stockLine) + "</p>" +
-      "<p class='pond-notes'>" + escHtml(p.notes || "") + "</p>";
-    var row = document.createElement("div");
-    row.className = "pond-actions";
-    if (!isActive) {
-      var sel = document.createElement("button");
-      sel.textContent = "Use this";
-      sel.className = "btn-small";
-      sel.setAttribute("aria-label", "Use pond " + p.name);
-      sel.onclick = function () { selectPond(p.id); };
-      row.appendChild(sel);
-    }
-    var del = document.createElement("button");
-    del.textContent = "Delete";
-    del.className = "btn-danger";
-    del.setAttribute("aria-label", "Delete pond " + p.name);
-    del.onclick = function () { deletePond(p.id); };
-    row.appendChild(del);
-    body.appendChild(row);
-    card.appendChild(body);
-    box.appendChild(card);
-  });
-  var active = getActivePond(state);
-  var stockFor = document.getElementById("stockFor");
-  if (active) {
-    document.getElementById("stockCommon").value = active.stock.common || "";
-    document.getElementById("stockScientific").value = active.stock.scientific || "";
-    document.getElementById("stockCount").value = active.stock.count || "";
-    document.getElementById("stockWeight").value = active.stock.avgWeightG || "";
-    if (stockFor) stockFor.textContent = "You are writing fish for: " + active.name;
-  } else if (stockFor) {
-    stockFor.textContent = "Pick a pond card first.";
-  }
-  renderPondNote(state, false);
-}
-
-function setDefaultDates() {
-  var ids = ["feedLogDate", "waterDate", "healthDate", "maintDate", "expDate", "saleDate", "taskDate"];
-  var t = todayStr();
-  ids.forEach(function (id) {
-    var el = document.getElementById(id);
-    if (el && !el.value) el.value = t;
-  });
-}
-
-function renderTasks(state) {
-  var box = document.getElementById("taskList");
-  box.innerHTML = "";
-  var list = getUpcomingTasks(state.tasks, state.activePondId);
-  var done = state.tasks.filter(function (t) { return t.pondId === state.activePondId && t.done; });
-  if (!list.length && !done.length) {
-    box.innerHTML = "<li class='hint'>No tasks yet. Add one above.</li>";
-    return;
-  }
-  if (list.length) {
-    box.appendChild(groupHead("Upcoming"));
-    list.forEach(function (t) { box.appendChild(taskItem(t)); });
-  }
-  if (done.length) {
-    box.appendChild(groupHead("Done"));
-    done.forEach(function (t) { box.appendChild(taskItem(t)); });
-  }
-}
-
-// A bold separator row inside the task list.
-function groupHead(text) {
-  var li = document.createElement("li");
-  li.className = "group-head";
-  li.textContent = text;
-  return li;
-}
-
-// One task row with its Done/Undo and Delete buttons.
-function taskItem(t) {
-  var li = document.createElement("li");
-  if (t.done) li.className = "done";
-  li.textContent = t.date + " [" + t.type + "] " + t.title + " ";
-  var b1 = document.createElement("button");
-  b1.textContent = t.done ? "Undo" : "Done";
-  b1.className = "btn-small";
-  b1.onclick = function () { toggleTask(t.id); };
-  var b2 = document.createElement("button");
-  b2.textContent = "X";
-  b2.className = "btn-danger";
-  b2.onclick = function () { deleteTask(t.id); };
-  li.appendChild(b1);
-  li.appendChild(b2);
-  return li;
-}
-
-function pondRows(rows, pondId) {
-  return rows.filter(function (r) { return r.pondId === pondId; });
-}
-
-function renderRecords(state) {
-  var id = state.activePondId;
-  var pond = getActivePond(state);
-  var forEl = document.getElementById("recordsFor");
-  if (forEl) forEl.textContent = pond ? ("You are writing for: " + pond.name) : "No pond picked yet. Open Ponds first.";
-  renderSimpleList("feedLogList", pondRows(state.feedLogs, id), function (r) {
-    return r.date + " - gave " + r.kg + " kg of food";
-  }, "Nothing saved yet. Type above and tap 'Save food'.", "feedLogs");
-  renderSimpleList("waterList", pondRows(state.waterLogs, id), function (r) {
-    var parts = [r.date];
-    if (r.temp) parts.push(r.temp + " C");
-    if (r.ph) parts.push("pH " + r.ph);
-    if (r.notes) parts.push(r.notes);
-    return parts.join(" - ");
-  }, "Nothing saved yet. Type above and tap 'Save water check'.", "waterLogs");
-  renderSimpleList("healthList", pondRows(state.healthLogs, id), function (r) {
-    return r.date + " - " + r.note;
-  }, "Nothing saved yet. Type what you saw and tap 'Save health note'.", "healthLogs");
-  renderSimpleList("maintList", pondRows(state.maintLogs, id), function (r) {
-    return r.date + " - " + r.note;
-  }, "Nothing saved yet. Type your work and tap 'Save work'.", "maintLogs");
-}
-
-function renderSimpleList(elId, rows, fmt, emptyText, collection) {
-  var box = document.getElementById(elId);
-  if (!box) return;
-  box.innerHTML = "";
-  if (!rows.length) {
-    box.innerHTML = "<li class='hint'>" + escHtml(emptyText || "Nothing here yet.") + "</li>";
-    return;
-  }
-  // Newest last 8 only, so long lists stay readable.
-  rows.slice(-8).forEach(function (r) {
-    var li = document.createElement("li");
-    li.className = "log-row";
-    var span = document.createElement("span");
-    span.textContent = fmt(r);
-    li.appendChild(span);
-    if (collection && r.id) {
-      var del = document.createElement("button");
-      del.textContent = "Remove";
-      del.className = "btn-danger btn-small";
-      del.setAttribute("aria-label", "Remove: " + fmt(r));
-      del.onclick = (function (col, rowId) {
-        return function () { deleteRow(col, rowId); };
-      })(collection, r.id);
-      li.appendChild(del);
-    }
-    box.appendChild(li);
-  });
-}
-
-function peso(n) {
-  var num = Number(n) || 0;
-  return num.toLocaleString("en-PH", { maximumFractionDigits: 2 });
-}
-
-function renderFinance(state) {
-  var id = state.activePondId;
-  var pond = getActivePond(state);
-  var forEl = document.getElementById("financeFor");
-  if (forEl) forEl.textContent = pond ? ("Money for: " + pond.name) : "No pond picked yet. Open Ponds first.";
-  renderSimpleList("expenseList", pondRows(state.expenses, id), function (r) {
-    return r.date + " - " + r.item + " (" + peso(r.amount) + " pesos)";
-  }, "Nothing here. Example: Feeds 25kg, 1200 pesos.", "expenses");
-  renderSimpleList("saleList", pondRows(state.sales, id), function (r) {
-    return r.date + " - " + r.item + " (" + peso(r.amount) + " pesos)";
-  }, "Nothing here. Example: Tilapia 10kg, 1500 pesos.", "sales");
-  var t = calcTotals(state.expenses, state.sales, id);
-  var outEl = document.getElementById("moneyOut");
-  var inEl = document.getElementById("moneyIn");
-  var leftEl = document.getElementById("moneyLeft");
-  if (outEl) outEl.textContent = peso(t.expenses);
-  if (inEl) inEl.textContent = peso(t.sales);
-  if (leftEl) leftEl.textContent = peso(t.profit);
-  var sumEl = document.getElementById("financeSummary");
-  if (sumEl) {
-    if (!pond) {
-      sumEl.textContent = "Pick a pond to see money.";
-    } else if (!state.expenses.length && !state.sales.length) {
-      sumEl.textContent = "No money saved yet. Save what you paid on the left, what you sold on the right.";
-    } else if (t.profit >= 0) {
-      sumEl.textContent = "Good: you have " + peso(t.profit) + " pesos left for " + pond.name + ".";
-    } else {
-      sumEl.textContent = "Careful: you spent " + peso(Math.abs(t.profit)) + " pesos more than you sold for " + pond.name + ".";
-    }
-  }
-}
-
-function reportRow(term, value) {
-  var wrap = document.createElement("div");
-  var dt = document.createElement("dt");
-  dt.textContent = term;
-  var dd = document.createElement("dd");
-  dd.textContent = value;
-  wrap.appendChild(dt);
-  wrap.appendChild(dd);
-  return wrap;
-}
-
-// Mobile dashboard mirrors the desktop numbers (same helpers, same values).
-function renderMobileDash(state) {
-  var box = document.getElementById("mobileDash");
-  if (!box) return;
-  var pond = getActivePond(state);
-  box.hidden = !pond;
-  if (!pond) return;
-  var today = todayStr();
-  document.getElementById("mDate").textContent =
-    new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
-  document.getElementById("mAvatar").textContent = (pond.name || "?").charAt(0).toUpperCase();
-  document.getElementById("mPondName").textContent = pond.name;
-  var stockTxt = pond.stock.count
-    ? (pond.stock.count + " " + (pond.stock.common || "fish"))
-    : "No fish yet";
-  document.getElementById("mPondSub").textContent = stockTxt + (pond.size ? (" - " + pond.size + " sqm") : "");
-  // Tasks due today or overdue drive the badge and the "tasks today" card.
-  var due = state.tasks.filter(function (t) {
-    return t.pondId === pond.id && !t.done && t.date <= today;
-  });
-  document.getElementById("mTodayNum").textContent = String(due.length);
-  var badge = document.getElementById("mBadge");
-  badge.textContent = String(due.length);
-  badge.hidden = (due.length === 0);
-  // Overview reuses the exact desktop values so both screens always agree.
-  var upcoming = getUpcomingTasks(state.tasks, pond.id);
-  document.getElementById("mTasks").textContent = String(upcoming.length);
-  var feedTxt = "-";
-  if (pond.stock.count && pond.stock.avgWeightG) {
-    var rate = findLocalRate(pond.stock.scientific, pond.stock.common) ||
-      suggestRateByWeight(Number(pond.stock.avgWeightG));
-    feedTxt = calcFeedKg(Number(pond.stock.count), Number(pond.stock.avgWeightG), rate).toFixed(2) + " kg";
-  }
-  document.getElementById("mFeed").textContent = feedTxt;
-  document.getElementById("mFish").textContent = pond.stock.count ? String(pond.stock.count) : "-";
-  var t = calcTotals(state.expenses, state.sales, pond.id);
-  document.getElementById("mMoney").textContent = peso(t.profit);
-  document.getElementById("mMoneyDot").className = "ov-dot " + (t.profit < 0 ? "rose" : "emerald");
-  // Today's schedule rows with a tap-to-finish pill on each.
-  var sched = document.getElementById("mSched");
-  sched.innerHTML = "";
-  var rows = getTodaySchedule(state.tasks, pond.id, today);
-  if (!rows.length) {
-    sched.innerHTML = "<li class='m-ev'><span class='ev-dot' aria-hidden='true'></span>" +
-      "<div class='ev-t'><strong>No tasks today</strong><small>Tap View all to add one</small></div></li>";
-    return;
-  }
-  rows.forEach(function (task) {
-    var li = document.createElement("li");
-    li.className = "m-ev";
-    var dot = document.createElement("span");
-    dot.className = "ev-dot " + (task.done ? "done" : "todo");
-    dot.setAttribute("aria-hidden", "true");
-    var txt = document.createElement("div");
-    txt.className = "ev-t";
-    var title = document.createElement("strong");
-    title.textContent = task.title;
-    var sub = document.createElement("small");
-    sub.textContent = task.type + " - " + (task.date === today ? "today" : task.date);
-    txt.appendChild(title);
-    txt.appendChild(sub);
-    var pill = document.createElement("button");
-    pill.className = "pill " + (task.done ? "pill-done" : "pill-todo");
-    pill.textContent = task.done ? "Done" : "Mark done";
-    pill.setAttribute("aria-label", (task.done ? "Reopen task: " : "Mark done: ") + task.title);
-    pill.onclick = (function (id) { return function () { toggleTask(id); }; })(task.id);
-    li.appendChild(dot);
-    li.appendChild(txt);
-    li.appendChild(pill);
-    sched.appendChild(li);
-  });
-}
-
-function renderDashboard(state) {
-  renderMobileDash(state);
-  var pond = getActivePond(state);
-  var dt = document.getElementById("dashTasks");
-  var dr = document.getElementById("dashRecent");
-  var summary = document.getElementById("dashSummary");
-  dt.innerHTML = "";
-  dr.innerHTML = "";
-  summary.innerHTML = "";
-  // Empty state says it once: one get-started panel, grey dot, the rest hidden.
-  document.getElementById("dashEmpty").hidden = !!pond;
-  document.getElementById("dashKpis").hidden = !pond;
-  document.getElementById("dashGrid").hidden = !pond;
-  if (!pond) {
-    document.getElementById("dashSub").textContent = "Add a pond to begin.";
-    document.getElementById("dashStatus").className = "statusbar idle";
-    document.getElementById("statusText").textContent = "No ponds yet.";
-    return;
-  }
-  document.getElementById("dashStatus").className = "statusbar";
-  document.getElementById("dashSub").textContent = pond.name + " - " + todayStr();
-  var upcoming = getUpcomingTasks(state.tasks, pond.id);
-  document.getElementById("statusText").textContent =
-    pond.name + " - " + upcoming.length + " open tasks, " + state.ponds.length + " pond(s)";
-  document.getElementById("kpiTasks").textContent = upcoming.length + " open";
-  if (pond.stock.count && pond.stock.avgWeightG) {
-    var rate = findLocalRate(pond.stock.scientific, pond.stock.common) ||
-      suggestRateByWeight(Number(pond.stock.avgWeightG));
-    var kg = calcFeedKg(Number(pond.stock.count), Number(pond.stock.avgWeightG), rate);
-    document.getElementById("kpiFeed").textContent = kg.toFixed(2) + " kg";
-  } else {
-    document.getElementById("kpiFeed").textContent = "No stock";
-  }
-  var t = calcTotals(state.expenses, state.sales, pond.id);
-  document.getElementById("kpiProfit").textContent = peso(t.profit);
-  var waters = pondRows(state.waterLogs, pond.id);
-  document.getElementById("kpiWater").textContent =
-    waters.length ? ("pH " + waters[waters.length - 1].ph) : "No data";
-  var stockTxt = pond.stock.count
-    ? ((pond.stock.common || "Fish") + " x " + pond.stock.count)
-    : "No stock";
-  summary.appendChild(reportRow("Stock", stockTxt));
-  summary.appendChild(reportRow("Size", pond.size ? (pond.size + " sqm") : "-"));
-  summary.appendChild(reportRow("Open tasks", String(upcoming.length)));
-  summary.appendChild(reportRow("Money left", peso(t.profit) + " pesos"));
-  if (!upcoming.length) dt.innerHTML = "<li class='hint'>No upcoming tasks.</li>";
-  upcoming.slice(0, 5).forEach(function (t) {
-    var li = document.createElement("li");
-    li.textContent = t.date + " - " + t.title;
-    dt.appendChild(li);
-  });
-  var recent = pondRows(state.feedLogs, pond.id).slice(-3);
-  if (!recent.length) dr.innerHTML = "<li class='hint'>No feedings yet.</li>";
-  recent.forEach(function (r) {
-    var li = document.createElement("li");
-    li.textContent = "Fed " + r.kg + " kg on " + r.date;
-    dr.appendChild(li);
-  });
-}
-
-// Start the app in a browser only (skipped during Node smoke test).
-if (typeof document !== "undefined") {
-  window.onload = function () {
-    // Open the section from the URL hash (e.g. index.html#feed), else dashboard.
-    var start = window.location.hash ? window.location.hash.slice(1) : "dashboard";
-    var known = ["dashboard", "ponds", "feed", "tasks", "records", "finance", "plans", "guide"];
-    if (known.indexOf(start) < 0) start = "dashboard";
-    refresh();
-    setDefaultDates();
-    initChat();
-    showSection(start);
-  };
-}
-
-// Export pure functions for the Node smoke test.
-if (typeof module !== "undefined") {
-  module.exports = {
-    calcFeedKg: calcFeedKg, calcTotals: calcTotals, buildAdvice: buildAdvice,
-    getUpcomingTasks: getUpcomingTasks, getTodaySchedule: getTodaySchedule,
-    recommendFeed: recommendFeed, pondDailyRation: pondDailyRation,
-    tasksOn: tasksOn, ymd: ymd,
-    isOnTopic: (typeof isOnTopic !== "undefined" ? isOnTopic : null)
-  };
-}
+  document.addEventListener('focusin', ensureFocusVisible);
+  window.visualViewport?.addEventListener('resize', ensureFocusVisible);
+  window.addEventListener('hashchange', route);
+  window.addEventListener('storage', event => { if (event.key === store.key || event.key === null || (!demo && opened.status === 'migration' && event.key === S.LEGACY)) { capture(); conflict = true; nav(); notify('Another tab changed storage. Export drafts and reload before saving.', true); } if (event.key === planKey()) { tier = D.plan(event.newValue); render(); } });
+  window.addEventListener('beforeunload', event => { capture(); if (Object.keys(drafts).length) { event.preventDefault(); event.returnValue = ''; } });
+  setInterval(() => { const current = D.today(state.settings.timezone); if (current !== day) { day = current; render(); notify('Farm date updated. Existing draft dates were preserved.'); } }, 30000);
+  openWorkspace(false); route();
+})();

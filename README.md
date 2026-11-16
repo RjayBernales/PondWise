@@ -1,47 +1,74 @@
-# PondWise v1
+# PondWise
 
-Plain HTML + CSS + JS fishpond manager. No framework, no build step.
+A local pond notebook built with plain HTML, CSS and JavaScript. No framework, build step, account, payment processor or backend is required.
 
-## Open it
+## Run
 
-Open `index.html` in any browser. Data stays in that browser (localStorage).
+Serve this directory from a stable HTTP(S) origin. For development:
 
-## Files (read in this order)
+```sh
+python3 -m http.server 8000 --bind 127.0.0.1
+```
 
-1. `index.html` - all screens as simple sections
-2. `styles.css` - light theme (white panels, navy sidebar/ink, sky-blue actions), calm 500/600 type, thin borders, three breakpoints
-3. `species-data.js` - built-in species list + `suggestRateByWeight()`
-4. `app.js` - plain functions: storage, ponds, feed, tasks, records, finance, plans, guide
-5. `assets/` - logo files (`logo.svg` in sidebar + favicon, `logo.png`, original `logo.jpeg`) and `reference/` screenshots
+Open `http://127.0.0.1:8000`. For deployment, publish the static files together, including `js/` and `assets/`. Use HTTPS. Modern browsers with localStorage, Intl timezones, BigInt, structuredClone, AbortController and crypto.randomUUID are required. Direct `file:` opening has browser-dependent storage behavior and is not the supported persistence workflow.
 
-## Species library
+**Data belongs to the browser and origin.** Changing scheme, hostname or port does not transfer records. Before moving an existing installation, open it at its original origin, download a backup, then preview and restore that backup at the new origin. Nothing synchronizes automatically.
 
-- Live: FishBase API at `https://fishbase.ropensci.org/species` (search by genus).
-- Offline fallback: `SPECIES_LIST` in `species-data.js` always works.
+## Existing data and recovery
 
-## Multi-pond
+The original `pondwise_v1` key is never changed or removed. On first opening legacy data, PondWise validates the complete dataset and shows migration counts before writing `pondwise_v2`. Valid numeric strings become typed values; blank optional measurements become `null`; PHP amounts become integer centavos. IDs and historical civil dates are retained. Historical creation/update/completion timestamps remain unknown rather than being invented. Duplicate IDs, orphan records, invalid fields and missing collections stop migration and show recovery tools; they are never guessed or silently dropped.
 
-Every task/log/expense/sale stores a `pondId`. The sidebar picker (desktop) or dashboard switcher (mobile) selects the active pond.
+A successful migration writes and verifies v2 before the application switches to it. An interrupted or failed migration leaves legacy data recoverable. Opening v2 again is idempotent. To use the old version of the application during the compatibility period, serve the previous code at the **same original origin**; its untouched v1 dataset represents the point before migration. Later v2 edits are not copied back to v1.
 
-## Mobile layout (narrow screens, per `assets/reference/mobile.png`)
+Help & settings provides backup, original-data export, replacement restore preview, and rollback preview on every tier. A restore is validated before writing and retains the prior raw v2 value under `pondwise_v2_rollback`. Every later successful mutation replaces this single rollback snapshot, so download it before continuing if you need to keep it. Corrupt originals remain exportable. Storage failures block saves and retain drafts. Save success is announced only after verified persistence.
 
-At 700px and below the sidebar is replaced by a fixed bottom tab bar (Home, Tasks, + Records, Helper, Money), and the dashboard swaps its desktop blocks for a greeting header, pond switcher, mini cards, Quick Access icons, Overview stats, Today's Schedule with tap-to-finish pills, and a help card.
+Backups have a 5 MiB UTF-8 limit, a versioned envelope and an export timestamp. Workspace writes reserve room for the export metadata so every saved workspace can be imported again. Recovery accepts full legacy backups and schema v2; unsupported versions are rejected. Backups restore operational data and timezone, never the browser-selected tier. **Replacement restore only**; no merge semantics are implied. Exports contain all archived and trashed data. Backups and draft exports are unencrypted local files.
 
-## Backup
+Cross-tab storage events pause editing, and every save compares the stored value with the value originally loaded. Export drafts and reload saved data to resolve a conflict. localStorage offers no multi-operation transaction: a simultaneous race between the comparison and write remains possible. Keep one editing tab open. Consider IndexedDB transactions if concurrent editing or larger datasets become necessary.
 
-Helper tab -> Download backup (JSON). Restore with the file picker.
+## Daily workflow
 
-## Features and where they live
+Use the persistent active-pond picker on every screen. New entries and drafts belong to that pond. History and cash reporting have explicit **Active pond / All ponds / named pond** scope controls; archived pond history remains available. Navigate with desktop sidebar links or mobile Home, Ponds, Tasks, Records and More. Old `#dashboard`, `#feed`, `#finance`, `#guide` and `#plans` links still work; Back/Forward updates the visible screen.
 
-- Dashboard: status bar, KPI strip (tasks open, feed today, profit, water pH), upcoming tasks, pond report, recent feedings, get-started panel
-- Dashboard on mobile: greeting + date, tasks bell with due-count badge, pond avatar, pond switcher, active-pond and tasks-today cards, Quick Access row, Overview stats, Today's Schedule, help card
-- Bottom tab bar on mobile: Home, Tasks, + (daily records), Helper, Money
-- Ponds: small 3-column pond cards with pond art on top (tap to pick, delete), add-pond form, fish-stock form
-- Feed: species search (live FishBase API + offline built-in list, "Use" fills stock names), daily feed estimator, "use selected pond" fill, standard-feeds guide table by fish size, per-pond daily rations from each pond's population (PondPro+)
-- Tasks: month calendar with per-day task dots (tap a day to fill the add-task date), grouped upcoming/done list, Done/Undo toggle, delete, add-task form
-- Records: food given, water check, fish health, work done - each with big Save button, example text, and Remove on saved rows
-- Money: money-out and money-in forms with plain words and examples, 3 summary boxes (paid, sold, left), plain-language profit line, Remove on saved rows
-- Plans: proposed PondStart (₱0) / PondElite (₱199, featured) / PondPro (₱99) tiers per `assets/reference/sub.jpg`, choice saved in browser
-- Tier enforcement: pond limits (Start 1, Pro 5, Elite unlimited, existing ponds always kept), Money tab needs Pro+, per-pond rations need Pro+, backup download/restore needs Elite - locked panels link to Plans
-- Helper: railguarded chatbot (PondWise topics only) with quick-question buttons, plain What/Why/Where/How guide, backup download/restore, load demo data
-- Everywhere: data auto-saves in the browser (localStorage), section deep-links via URL hash, demo data (3 stocked ponds) from Dashboard, Ponds, or Helper
+Drafts remain in memory per workspace, pond and form when navigating or switching ponds. A leave/reload warning protects unsaved drafts. Settings can download drafts as a reference JSON file; that file is **not** a restorable notebook backup. A browser crash can lose unsaved drafts. Save records or export drafts before closing the tab. Editing a historical record preserves its original pond ownership even when viewed through All ponds.
+
+See [FEATURES.md](FEATURES.md) for the current feature contract. The original `PondWise-Features.docx` is retained as a historical artifact; FEATURES.md supersedes its tier claims and workflow descriptions.
+
+## Files
+
+- `index.html`: accessible application shell and static script loading.
+- `styles.css`: navy/blue responsive notebook UI and shared tokens.
+- `app.js`: navigation, view rendering, entry/draft handling and UI events; renders only the active view.
+- `js/domain.js`: versioned schema, migration, dates, feed policy, money, integrity and selectors.
+- `js/storage.js`: verified persistence, recovery snapshots and stale-write checks.
+- `js/species.js`: cancellable, bounded, cached remote species lookup with local fallback.
+- `species-data.js`: offline species names; feeding rates are exclusively in the shared domain policy.
+- `tests/domain.test.js`: dependency-free Node domain/storage/API suite.
+- `tests/browser-check.js`: optional synthetic browser integration and responsive harness.
+
+## Checks
+
+Node 18+ supports the test harness (a current LTS is recommended):
+
+```sh
+node tests/domain.test.js
+node --test tests/*.test.js
+node --check app.js
+node --check species-data.js
+node --check js/domain.js
+node --check js/storage.js
+node --check js/species.js
+node --check tests/domain.test.js
+node --check tests/browser-check.js
+git diff --check
+```
+
+For browser integration, install `agent-browser` separately, start the static server at port 8765, and run:
+
+```sh
+AGENT_BROWSER_BIN=/path/to/agent-browser \
+AGENT_BROWSER_EXECUTABLE_PATH=/path/to/chromium \
+node tests/browser-check.js
+```
+
+The harness creates its own named browser session and synthetic local data. It must never be attached to an operator's browser profile. Set `PONDWISE_TEST_URL` to change the isolated test origin. Browser screenshots are written under `/tmp`.
