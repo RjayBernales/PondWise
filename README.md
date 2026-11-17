@@ -12,7 +12,15 @@ python3 -m http.server 8000 --bind 127.0.0.1
 
 Open `http://127.0.0.1:8000`. For deployment, publish the static files together, including `js/` and `assets/`. Use HTTPS. Modern browsers with localStorage, Intl timezones, BigInt, structuredClone, AbortController and crypto.randomUUID are required. Direct `file:` opening has browser-dependent storage behavior and is not the supported persistence workflow.
 
-**Data belongs to the browser and origin.** Changing scheme, hostname or port does not transfer records. Before moving an existing installation, open it at its original origin, download a backup, then preview and restore that backup at the new origin. Nothing synchronizes automatically.
+**Data belongs to the browser and origin.** Changing scheme, hostname or port does not transfer records. PondElite exposes the Backup Data controls needed to download, preview and restore a workspace at a new origin. Nothing synchronizes automatically.
+
+## Demo subscription matrix
+
+- **PondStart:** one active pond; Feed Estimator, standard feed table, Tasks and PondWise Helper. No Money entry, Auto Calculator, Pond Rations or Backup Data.
+- **PondPro:** up to five active ponds; PondStart features plus the Money Calculator. No Auto Calculator, Pond Rations or Backup Data.
+- **PondElite:** unlimited active ponds and full access to Money, Auto Calculator, per-pond Rations and Backup Data.
+
+Tier selection is a local demo preview, not a payment or security system. Downgrades retain data and block only gated actions; they do not delete ponds, history or transactions.
 
 ## Existing data and recovery
 
@@ -20,7 +28,7 @@ The original `pondwise_v1` key is never changed or removed. On first opening leg
 
 A successful migration writes and verifies v2 before the application switches to it. An interrupted or failed migration leaves legacy data recoverable. Opening v2 again is idempotent. To use the old version of the application during the compatibility period, serve the previous code at the **same original origin**; its untouched v1 dataset represents the point before migration. Later v2 edits are not copied back to v1.
 
-Help & settings provides backup, original-data export, replacement restore preview, and rollback preview on every tier. A restore is validated before writing and retains the prior raw v2 value under `pondwise_v2_rollback`. Every later successful mutation replaces this single rollback snapshot, so download it before continuing if you need to keep it. Corrupt originals remain exportable. Storage failures block saves and retain drafts. Save success is announced only after verified persistence.
+PondElite Help & settings provides backup, original-data export, replacement restore preview and rollback preview. PondStart and PondPro show that Backup Data is unavailable. A restore is validated before writing and retains the prior raw v2 value under `pondwise_v2_rollback`. Every later successful mutation replaces this single rollback snapshot, so download it before continuing if you need to keep it. Corrupt originals remain exportable through emergency recovery. Storage failures block saves and retain drafts. Save success is announced only after verified persistence.
 
 Backups have a 5 MiB UTF-8 limit, a versioned envelope and an export timestamp. Workspace writes reserve room for the export metadata so every saved workspace can be imported again. Recovery accepts full legacy backups and schema v2; unsupported versions are rejected. Backups restore operational data and timezone, never the browser-selected tier. **Replacement restore only**; no merge semantics are implied. Exports contain all archived and trashed data. Backups and draft exports are unencrypted local files.
 
@@ -28,7 +36,7 @@ Cross-tab storage events pause editing, and every save compares the stored value
 
 ## Daily workflow
 
-Use the persistent active-pond picker on every screen. New entries and drafts belong to that pond. History and cash reporting have explicit **Active pond / All ponds / named pond** scope controls; archived pond history remains available. Navigate with desktop sidebar links or mobile Home, Ponds, Tasks, Records and More. Old `#dashboard`, `#feed`, `#finance`, `#guide` and `#plans` links still work; Back/Forward updates the visible screen.
+Use the persistent active-pond picker on every screen. New entries, helper answers and drafts belong to that selected pond. History and Money reporting have explicit **Active pond / All ponds / named pond** scope controls; archived pond history remains available. Ponds supports creating, editing and recoverably trashing a pond, plus editing or explicitly removing its current fish stock. Feed contains the manual Estimator and standard feed table on every tier; PondElite adds automatic dashboard calculations and per-pond rations. Money records Bought and Sold amounts and shows Profit as sold minus bought (net cash flow, not full accounting profit). The Tasks calendar shows task indicators and selected-day work; selecting a date prefills a new task without changing the date of an existing correction. Use Tab/Enter or the arrow keys to navigate dates.
 
 Drafts remain in memory per workspace, pond and form when navigating or switching ponds. A leave/reload warning protects unsaved drafts. Settings can download drafts as a reference JSON file; that file is **not** a restorable notebook backup. A browser crash can lose unsaved drafts. Save records or export drafts before closing the tab. Editing a historical record preserves its original pond ownership even when viewed through All ponds.
 
@@ -37,7 +45,7 @@ See [FEATURES.md](FEATURES.md) for the current feature contract. The original `P
 ## Files
 
 - `index.html`: accessible application shell and static script loading.
-- `styles.css`: navy/blue responsive notebook UI and shared tokens.
+- `styles.css`: responsive desktop notebook and compact white/purple mobile UI.
 - `app.js`: navigation, view rendering, entry/draft handling and UI events; renders only the active view.
 - `js/domain.js`: versioned schema, migration, dates, feed policy, money, integrity and selectors.
 - `js/storage.js`: verified persistence, recovery snapshots and stale-write checks.
@@ -45,6 +53,7 @@ See [FEATURES.md](FEATURES.md) for the current feature contract. The original `P
 - `species-data.js`: offline species names; feeding rates are exclusively in the shared domain policy.
 - `tests/domain.test.js`: dependency-free Node domain/storage/API suite.
 - `tests/browser-check.js`: optional synthetic browser integration and responsive harness.
+- `tests/mobile-check.js`: optional isolated Playwright checks for mobile layouts, calendar interaction, date drafts, recovery and keyboard behavior.
 
 ## Checks
 
@@ -72,3 +81,13 @@ node tests/browser-check.js
 ```
 
 The harness creates its own named browser session and synthetic local data. It must never be attached to an operator's browser profile. Set `PONDWISE_TEST_URL` to change the isolated test origin. Browser screenshots are written under `/tmp`.
+
+For the focused mobile suite, make Playwright available to Node (for example through a separate test environment), start the static server, and run:
+
+```sh
+PONDWISE_TEST_URL=http://127.0.0.1:8765 \
+BROWSER_BIN=/path/to/chromium \
+node tests/mobile-check.js
+```
+
+This suite checks 320, 375, 390, 480, 700 and 1440px and writes dashboard/calendar screenshots to `/tmp`. Software-keyboard viewport behavior is simulated; the suite does not need a physical phone. Set `AXE_CORE_PATH` to a local `axe-core/axe.min.js` file to audit all routes at 390 and 1440px as well.

@@ -4,7 +4,7 @@ This document describes the static notebook implementation and supersedes the or
 
 ## Navigation and daily context
 
-Overview leads with overdue/today work, estimated versus logged feeding, latest dated water observation, completed-today tasks and recent activity. The active pond is visible on every screen. Mobile navigation has Home, Ponds, Tasks, Records and More; Money, Tools, Help & settings and Plan preview live under More. Legacy hashes remain aliases. Native hash navigation supports bookmarking, Back and Forward, with `aria-current` on selected navigation links.
+Overview leads with overdue/today work, tier-aware automatic feeding, latest dated water observation, completed-today tasks and recent activity. The active pond is visible on every screen. Mobile navigation has Home, Ponds, a raised Add record action, Tasks and More; Money, Feed, Help & settings and Subscription preview live under More. Legacy hashes remain aliases. Native hash navigation supports bookmarking, Back and Forward, with `aria-current` on selected navigation links.
 
 Ponds have editable details, a single current stock snapshot and a stock-update timestamp. Archive retains all history and frees an active-pond slot. Trashing a pond retains its entire dependent graph; recovering it is one validated mutation. Individual records and tasks have recoverable trash and immediate Undo. There is no permanent purge.
 
@@ -12,7 +12,7 @@ Tasks have future-capable due dates, an agenda with Overdue/Today/Upcoming/Compl
 
 Records have one entry form at a time for feeding, water, health or maintenance. Every history is searchable, filterable by period and pond, and paginated without a hidden eight-row cap. Water checks require at least one measurement or observation. Empty, stale and missing measurements are identified separately. Dashboard and guide use the same deterministic latest-water selector (observation date, creation timestamp, ID); insertion order does not override observation date.
 
-Money combines income and expenses in a searchable, categorized, period-filtered ledger. The explicit scope and all active filters govern the totals. **Net cash flow = income − expenses**; it is not accounting profit. PHP values are stored as integer centavos, summed exactly and rejected if aggregates exceed the safe integer range. Transaction descriptions do not alter stock.
+Money combines Bought and Sold entries in a searchable, categorized, period-filtered ledger. The explicit scope and all active filters govern the totals. The demo label **Profit = sold − bought** is net cash flow, not full accounting profit. PHP values are stored as integer centavos, summed exactly and rejected if aggregates exceed the safe integer range. Transaction descriptions do not alter stock.
 
 ## Shared input contracts
 
@@ -46,7 +46,7 @@ Species lookup immediately displays local name matches, then optionally queries 
 
 ## Tier preview and data ownership
 
-PondStart allows 1 active pond, PondPro 5 and PondElite unlimited. Money entry/correction is available in Pro/Elite preview; existing money records remain readable/exportable on Start. Basic observations, tasks, feed estimates, backup/export/restore and trash recovery are available on every tier. Downgrades retain all ponds and data, blocking creation/reactivation when at or above the limit. Archived ponds do not count. Replacement restore preserves valid over-limit datasets. The demo has separate data and tier preferences. The separate seeded demo starts with three practice ponds regardless of tier; subsequent creation/reactivation follows the normal limits.
+PondStart allows 1 active pond and includes the manual Feed Estimator, standard feed table, Tasks and PondWise Helper. It has no Money entry, Auto Calculator, Pond Rations or Backup Data. PondPro allows 5 active ponds and adds Money entry/correction, but still has no Auto Calculator, Pond Rations or Backup Data. PondElite allows unlimited active ponds and unlocks Money, automatic calculations, per-pond rations and Backup Data. Existing gated records remain readable after a downgrade. Downgrades retain all ponds and data, blocking creation/reactivation when at or above the limit. Archived ponds do not count. Replacement restore is available only while PondElite is selected and preserves valid over-limit datasets. The demo has separate data and tier preferences. The seeded demo starts with one practice pond plus task, water, feeding, bought and sold records so the full presentation sequence has data; subsequent creation/reactivation follows the selected tier limit.
 
 Tier selection is a local preview, not a paid subscription or security boundary. There are no advertised reminders, featured profiles, support subscriptions, push notifications, paid enforcement or unavailable analytics.
 

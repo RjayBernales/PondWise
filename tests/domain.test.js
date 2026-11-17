@@ -60,6 +60,11 @@ test('water at least one observation; latest selector orders by date, timestamp 
 for (const [field, value] of [['name', ' '], ['name', 'x'.repeat(121)], ['size', -1], ['notes', 'x'.repeat(2001)]]) test('pond field constraint ' + field, () => { const s = fixture(); s.data.ponds[0][field] = value; assert.throws(() => D.validate(s)); });
 test('water limits and fractional counts are centrally enforced', () => { const s = fixture(); s.data.ponds[0].stock.count = 1.5; assert.throws(() => D.validate(s)); s.data.ponds[0].stock.count = 1; s.data.waterLogs.push({ ...meta('w'), pondId: 'p', date: '2025-01-01', ph: 14.1, temp: 61, notes: '' }); assert.throws(() => D.validate(s)); });
 test('archive, trash, recovery retain dependent graph and limits preserve overage', () => { const s = fixture(); s.data.tasks.push(task()); const deleted = D.setDeleted(s, 'ponds', 'p', true); assert.equal(deleted.data.tasks.length, 1); assert.equal(deleted.data.activePondId, null); const recovered = D.setDeleted(deleted, 'ponds', 'p', false); assert.equal(recovered.data.activePondId, 'p'); assert.equal(D.canActivate(recovered.data, 'start'), false); const over = clone(recovered); over.data.ponds.push({ ...over.data.ponds[0], id: 'p2' }); assert.doesNotThrow(() => D.validate(over)); assert.equal(D.canActivate(over.data, 'start'), false); assert.throws(() => D.setDeleted(s, '__proto__', 'p', true)); assert.equal(D.plan('alien'), 'start'); });
+test('subscription capabilities match the demo tier matrix', () => {
+  assert.deepEqual(D.capabilities('start'), { tier: 'start', pondLimit: 1, feedEstimator: true, tasks: true, helper: true, money: false, autoCalculator: false, pondRations: false, backup: false });
+  assert.deepEqual(D.capabilities('pro'), { tier: 'pro', pondLimit: 5, feedEstimator: true, tasks: true, helper: true, money: true, autoCalculator: false, pondRations: false, backup: false });
+  assert.deepEqual(D.capabilities('elite'), { tier: 'elite', pondLimit: Infinity, feedEstimator: true, tasks: true, helper: true, money: true, autoCalculator: true, pondRations: true, backup: true });
+});
 function clone(v) { return structuredClone(v); }
 const local = [{ common: 'Tilapia', scientific: 'Oreochromis niloticus' }];
 for (const mode of ['offline', 'http', 'shape', 'json', 'row']) test('species fallback retains local results: ' + mode, async () => {

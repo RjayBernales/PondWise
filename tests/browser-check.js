@@ -21,7 +21,7 @@ try {
   go('ponds'); set('#pond-create [name=name]', 'Synthetic pond'); submit('#pond-create');
   check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.ponds.length===1`, 'create pond persists typed envelope');
   set('#pond-edit [name=count]', '800'); set('#pond-edit [name=avgWeightG]', '150'); submit('#pond-edit');
-  go('overview'); check(`document.querySelector('main').textContent.includes('3.60 kg')`, 'shared overview feed estimate');
+  go('plans'); click('[data-tier=elite]'); go('overview'); check(`document.querySelector('main').textContent.includes('3.60 kg')`, 'PondElite overview automatic feed estimate');
   go('records'); set('#entry-feedLogs [name=kg]', '1.25');
   go('tasks'); go('records'); click('.skip'); check(`location.hash==='#records'`, 'skip link keeps current screen'); check(`document.querySelector('[name=kg]').value==='1.25'`, 'navigation retains record draft');
   submit('#entry-feedLogs'); check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.feedLogs[0].kg===1.25`, 'feed record saves and clears draft');
@@ -57,14 +57,16 @@ try {
   go('plans'); click('[data-tier=start]'); go('ponds'); set('#pond-create [name=name]', 'Blocked pond'); submit('#pond-create');
   check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.ponds.length===2 && document.querySelector('#notice').textContent.includes('limit')`, 'downgrade retains over-limit ponds and blocks creation');
   click('#pond-create [data-action=discard]');
-  go('settings'); const farm = run(`localStorage.getItem('pondwise_v2')`); click('[data-action=workspace]');
+  go('tools'); check(`document.querySelector('main').textContent.includes('Feed Estimator') && document.querySelector('main').textContent.includes('Per-pond rations require PondElite')`, 'PondStart keeps manual feed tools and locks pond rations');
+  go('settings'); check(`!document.querySelector('#restoreFile') && document.querySelector('main').textContent.includes('unavailable on PondStart and PondPro')`, 'PondStart has no Backup Data controls'); const farm = run(`localStorage.getItem('pondwise_v2')`); click('[data-action=workspace]');
   check(`localStorage.getItem('pondwise_v2')===${JSON.stringify(farm)} && !!localStorage.getItem('pondwise_demo_v2')`, 'demo is isolated from farm data');
+  check(`(()=>{const d=JSON.parse(localStorage.getItem('pondwise_demo_v2')).data;return d.ponds.length===1&&d.tasks.length===1&&d.feedLogs.length===1&&d.waterLogs.length===1&&d.expenses.length===1&&d.sales.length===1})()`, 'seeded dashboard demo includes one pond and complete sequence data');
   go('plans'); click('[data-tier=elite]'); check(`localStorage.getItem('pondwise_plan')==='start' && localStorage.getItem('pondwise_demo_plan')==='elite'`, 'demo tier preference is isolated from farm tier');
   click('#workspaceBanner [data-action=workspace]');
-  go('finance'); check(`document.querySelector('h1').textContent==='Money'`, 'legacy finance hash aliases Money');
-  go('feed'); check(`document.querySelector('h1').textContent==='Tools'`, 'legacy feed hash aliases Tools');
-  command('back'); check(`document.querySelector('h1').textContent==='Money'`, 'browser Back changes visible route');
-  command('forward'); check(`document.querySelector('h1').textContent==='Tools'`, 'browser Forward changes visible route');
+  go('finance'); check(`document.querySelector('h1').textContent==='Money Calculator'`, 'legacy finance hash aliases Money Calculator');
+  go('feed'); check(`document.querySelector('h1').textContent==='Feed'`, 'legacy feed hash aliases Feed');
+  command('back'); check(`document.querySelector('h1').textContent==='Money Calculator'`, 'browser Back changes visible route');
+  command('forward'); check(`document.querySelector('h1').textContent==='Feed'`, 'browser Forward changes visible route');
   go('settings');
   // Simulate a separate tab's event after a persisted conflicting write.
   act(`{const s=JSON.parse(localStorage.getItem('pondwise_v2'));s.revision++;localStorage.setItem('pondwise_v2',JSON.stringify(s));dispatchEvent(new StorageEvent('storage',{key:'pondwise_v2',newValue:JSON.stringify(s)}));}`);
@@ -87,7 +89,10 @@ try {
   set('#entry-healthLogs [name=note]', 'Planned observation is not allowed'); set('#entry-healthLogs [name=date]', '2099-01-01'); submit('#entry-healthLogs');
   check(`document.querySelector('[name=date]').getAttribute('aria-invalid')==='true' && JSON.parse(localStorage.getItem('pondwise_v2')).data.healthLogs.length===0`, 'future observations rejected in UI');
   click('#entry-healthLogs [data-action=discard]');
-  go('settings');
+  go('settings'); check(`!document.querySelector('#restoreFile')`, 'PondPro has no Backup Data controls');
+  go('tools'); check(`document.querySelector('main').textContent.includes('Per-pond rations require PondElite')`, 'PondPro keeps per-pond rations locked');
+  go('plans'); click('[data-tier=elite]'); go('tools'); check(`document.querySelector('main').textContent.includes('kg/day') && !document.querySelector('main').textContent.includes('Per-pond rations require PondElite')`, 'PondElite unlocks per-pond rations');
+  go('settings'); check(`!!document.querySelector('#restoreFile') && !!document.querySelector('[data-action=export]')`, 'PondElite unlocks Backup Data controls');
   function upload(raw) { act(`{ const transfer=new DataTransfer();transfer.items.add(new File([${JSON.stringify(raw)}],'backup.json',{type:'application/json'}));const input=document.querySelector('#restoreFile');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true})); }`); }
   const beforeRestore=run(`localStorage.getItem('pondwise_v2')`);
   upload('{"ponds":[]}');
@@ -101,7 +106,7 @@ try {
   candidate.plan='elite'; upload(JSON.stringify(candidate));
   check(`document.querySelector('#restorePreview').textContent.includes('Replacement preview') && localStorage.getItem('pondwise_v2')===${JSON.stringify(beforeRestore)}`, 'valid restore previews counts without committing');
   click('[data-action=restore]');
-  check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.feedLogs.length===28 && localStorage.getItem('pondwise_plan')==='pro' && localStorage.getItem('pondwise_v2_rollback')===${JSON.stringify(beforeRestore)}`, 'restore verifies replacement, preserves rollback, ignores imported tier');
+  check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.feedLogs.length===28 && localStorage.getItem('pondwise_plan')==='elite' && localStorage.getItem('pondwise_v2_rollback')===${JSON.stringify(beforeRestore)}`, 'restore verifies replacement, preserves rollback, ignores imported tier');
   go('records'); check(`document.querySelector('.pagination').textContent.includes('Page 1 of 3')`, 'complete history is paginated');
   click('[data-action=page][data-step="1"]'); check(`document.querySelector('.pagination').textContent.includes('Page 2 of 3')`, 'older records are reachable');
   set('#history-search','Searchable archive 24'); click('[data-action=filter]');
@@ -132,6 +137,8 @@ try {
   act(`window.pendingReads[0](${JSON.stringify(recoveryBackup)})`);
   act(`File.prototype.text=window.originalFileText`);click('[data-action=restore]');
   check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.ponds[0].notes==='Latest selected backup'`, 'older file-read response cannot replace newer restore selection');
+  go('settings'); set('#question', 'latest water'); submit('#helper'); check(`document.querySelector('#helperAnswer').textContent.includes('Context: '+document.querySelector('#pondContext option:checked').textContent)`, 'Helper answers within the selected pond context');
+  go('ponds'); act(`window.confirm=()=>true`); click('[data-action=clear-stock]'); check(`(()=>{const d=JSON.parse(localStorage.getItem('pondwise_v2')).data,p=d.ponds.find(x=>x.id===d.activePondId);return p.stock.common===''&&p.stock.count===null&&p.stock.avgWeightG===null})()`, 'fish stock can be explicitly removed without deleting the pond');
   // Viewport matrix checks every operational screen with saved data.
   const routes = ['overview','ponds','tasks','records','money','tools','settings','plans','more'];
   for (const width of [320,375,390,480,700,768,900,1024,1440]) {
@@ -140,6 +147,10 @@ try {
       go(route);
       check(`(()=>{const ids=[...document.querySelectorAll('[id]')].map(e=>e.id);return new Set(ids).size===ids.length})()`, `${route}: unique control IDs at ${width}px`);
       check(`document.documentElement.scrollWidth<=innerWidth`, `${route}: no horizontal overflow at ${width}px`);
+      if (route === 'tasks') {
+        check(`getComputedStyle(document.querySelector('.calendar')).display==='grid' && document.querySelectorAll('.weekday').length===7`, `visible month calendar at ${width}px`);
+        check(`[...document.querySelectorAll('[data-action=day]')].every(e=>e.getBoundingClientRect().width>=43.9 && e.getBoundingClientRect().height>=44)`, `calendar touch targets at ${width}px`);
+      }
     }
   }
   command('set','viewport','390','844'); go('overview'); command('screenshot','/tmp/pondwise-mobile.png');

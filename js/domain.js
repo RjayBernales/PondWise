@@ -139,6 +139,20 @@
   }
   function plan(v) { return ['start', 'pro', 'elite'].includes(v) ? v : 'start'; }
   function limit(v) { return { start: 1, pro: 5, elite: Infinity }[plan(v)]; }
+  function capabilities(v) {
+    const tier = plan(v);
+    return {
+      tier,
+      pondLimit: limit(tier),
+      feedEstimator: true,
+      tasks: true,
+      helper: true,
+      money: tier === 'pro' || tier === 'elite',
+      autoCalculator: tier === 'elite',
+      pondRations: tier === 'elite',
+      backup: tier === 'elite'
+    };
+  }
   function canActivate(data, tier) { return data.ponds.filter(p => !p.archived && !p.deletedAt).length < limit(tier); }
   function toggleTask(task, now = new Date().toISOString()) { return { ...task, done: !task.done, completedAt: task.done ? null : now, updatedAt: now }; }
   function completedToday(task, zone, now = new Date()) { return task.done && task.completedAt !== null && today(zone, new Date(task.completedAt)) === today(zone, now); }
@@ -151,5 +165,5 @@
     // Pond deletion retains its entire dependent graph; trash restores it as one unit.
     return validate(next);
   }
-  return { COLLECTIONS, TASK_TYPES, STAGES, fail, number, today, validDate, date, timezone, money, blank, validate, migrate, parse, sorted, live, latestWater, totals, recommendation, plan, limit, canActivate, toggleTask, completedToday, setDeleted };
+  return { COLLECTIONS, TASK_TYPES, STAGES, fail, number, today, validDate, date, timezone, money, blank, validate, migrate, parse, sorted, live, latestWater, totals, recommendation, plan, limit, capabilities, canActivate, toggleTask, completedToday, setDeleted };
 });
