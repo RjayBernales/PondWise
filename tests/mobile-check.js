@@ -24,7 +24,7 @@ const axePath = process.env.AXE_CORE_PATH;
     assert.match(await page.locator('.summary-pair').innerText(), /Create your first pond/);
     await go('settings'); await page.locator('button[data-action=workspace]').click();
     await go('overview'); assert.match(await page.locator('.dash-stats').innerText(), /Elite/);
-    await go('plans'); await page.locator('[data-tier=elite]').click(); await go('overview');
+    await go('plans'); await page.locator('[data-action=plan][data-tier=elite]').click(); await go('overview');
     assert.match(await page.locator('.dash-stats').innerText(), /3.60 kg/);
     assert.match(await page.locator('.schedule').innerText(), /Observe fish appetite/);
     const before = await page.evaluate(() => localStorage.getItem('pondwise_demo_v2'));

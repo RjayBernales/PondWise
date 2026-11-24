@@ -53,7 +53,9 @@ See [FEATURES.md](FEATURES.md) for the current feature contract. The original `P
 ## Files
 
 - `index.html`: accessible application shell and static script loading.
-- `styles.css`: responsive desktop notebook and compact white/purple mobile UI.
+- `styles.css`: base responsive notebook layouts.
+- `refinements.css`: shared blue, teal and amber visual system, light/dark components and floating plan offer.
+- `js/icons.js`: local, accessible Lucide icon renderer; license and sources are retained in `assets/icons/`.
 - `js/account.js`: local signup/sign-in, fixed demo login, profile, password hashing, photo resizing and theme preferences.
 - `app.js`: navigation, view rendering, entry/draft handling and UI events; renders only the active view.
 - `js/domain.js`: versioned schema, migration, dates, feed policy, money, integrity and selectors.
@@ -106,4 +108,15 @@ Account browser regression (same server and browser setup as the integration har
 
 ```sh
 node tests/account-check.js
+```
+
+## Plan offer and visual checks
+
+The dashboard shows a dismissible Elite offer for Free and Pro previews. Closing it persists for the current browser workspace. Purchase buttons open an accessible native dialog with plan details and an optional local preview; **checkout is not connected and no payment is collected**. Elite previews do not show the offer. No prices, discounts or billing claims are implied.
+
+The visual regression harness uses the taste skill’s zero-dependency headless Chrome helper. It starts its own temporary local server by default, checks routes in both themes and multiple viewport sizes, and writes screenshots under `/tmp/pondwise-refinements`. Point `PONDWISE_CDP_MODULE` at `design-taste-frontend/scripts/lib/cdp.mjs` and `CHROME_PATH` at your Chromium executable:
+
+```sh
+PONDWISE_CDP_MODULE=/path/to/design-taste-frontend/scripts/lib/cdp.mjs \
+CHROME_PATH=/path/to/chromium node tests/refinement-check.mjs
 ```

@@ -1,17 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-type="software">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="page-type" content="software">
+  <meta name="site-kind" content="software">
   <meta name="theme-color" content="#122f48">
   <meta name="description" content="A local pond notebook for daily work, feeding, water observations and cash records.">
   <title>PondWise | Pond notebook</title>
   <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="refinements.css">
   <script defer src="js/domain.js"></script>
   <script defer src="js/storage.js"></script>
   <script defer src="species-data.js"></script>
   <script defer src="js/species.js"></script>
+  <script defer src="js/icons.js"></script>
   <script defer src="js/account.js"></script>
   <script defer src="app.js"></script>
 </head>
@@ -21,7 +25,7 @@
     <a href="#overview" class="brand"><img src="assets/logo.svg" alt="" width="40" height="40">PondWise</a>
     <p class="sidebar-note">Your daily pond notebook</p>
     <nav id="desktopNav" aria-label="Main navigation"></nav>
-    <p class="sidebar-foot">Stored in this browser.<br>Keep a backup somewhere safe.</p>
+    <p class="sidebar-foot">Stored in this browser.<br>Keep a backup somewhere safe.<br><a href="assets/icons/LICENSE.txt" class="icon-credit">Lucide icons · ISC</a></p>
   </aside>
   <div class="workspace">
     <header class="context">
@@ -32,6 +36,8 @@
     <div id="notice" role="status" aria-live="polite"></div>
     <main id="main" tabindex="-1"><noscript>PondWise needs JavaScript to open your local notebook.</noscript></main>
   </div>
+  <div id="planOffer"></div>
+  <dialog id="purchaseDialog" aria-labelledby="purchaseTitle" aria-describedby="purchaseDescription"></dialog>
   <nav id="mobileNav" class="mobile-nav" aria-label="Mobile navigation"></nav>
 </body>
 </html>

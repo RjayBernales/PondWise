@@ -25,7 +25,7 @@
   function pondName(id) { return state.data.ponds.find(p => p.id === id)?.name || 'Unknown pond'; }
   function usable() { return !store.blocked && opened.status !== 'migration' && !conflict; }
   function notify(message, error = false) { $('notice').textContent = message; $('notice').className = error ? 'error' : ''; $('notice').setAttribute('role', error ? 'alert' : 'status'); }
-  function button(label, action, data = '', cls = '') { return `<button type="button" class="${cls}" data-action="${action}" ${data}>${esc(label)}</button>`; }
+  function button(label, action, data = '', cls = '') { return `<button type="button" class="${cls}" data-action="${action}" ${data}>${actionIcons[action] ? icon(actionIcons[action]) : ''}${esc(label)}</button>`; }
   function link(label, route, cls = 'button') { return `<a class="${cls}" href="#${route}">${esc(label)}</a>`; }
   function head(title, sub = '') { return `<div class="page-head"><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div>`; }
   function empty(message = 'No records yet. Add a record to begin.') { return `<p class="empty">${esc(message)}</p>`; }
@@ -41,26 +41,10 @@
     const stale = (new Date(day + 'T12:00:00Z') - new Date(w.date + 'T12:00:00Z')) / 86400000 > 7;
     return `<p><strong>${esc(w.date)}${stale ? ' • More than 7 days old' : ''}</strong></p><p>pH: ${w.ph === null ? 'Not measured' : esc(w.ph)}<br>Temperature: ${w.temp === null ? 'Not measured' : esc(w.temp) + ' °C'}</p><p class="wrap">${esc(w.notes)}</p><small>Readings alone do not establish fish health. Recheck unusual readings and consult local aquaculture support before treatment.</small>`;
   }
-  // Small, local icons keep navigation available offline.
-  function icon(name) {
-    const paths = {
-      home: '<path d="m3 10 9-7 9 7M5 9v12h5v-7h4v7h5V9"/>',
-      ponds: '<path d="M3 7c3-3 5 3 9 0s6 3 9 0M3 12c3-3 5 3 9 0s6 3 9 0M3 17c3-3 5 3 9 0s6 3 9 0"/>',
-      tasks: '<rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4m8-4v4M4 11h16m-12 5 2 2 5-4"/>',
-      records: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6m-6 4h6m-6 4h4"/>',
-      tools: '<path d="m14 6 4-3a6 6 0 0 1-7 8l-7 7a2 2 0 0 0 3 3l7-7a6 6 0 0 0 7-8l-4 3Z"/>',
-      help: '<circle cx="12" cy="12" r="9"/><path d="M9 9a3 3 0 1 1 4 3c-1 .5-1 1-1 2m0 3h.01"/>',
-      more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
-      plus: '<path d="M12 5v14M5 12h14"/>',
-      feed: '<path d="M5 8h14l-2 13H7ZM8 8V3h8v5m-5 5h2m-2 4h2"/>',
-      water: '<path d="M12 3C10 7 5 11 5 15a7 7 0 0 0 14 0c0-4-5-8-7-12Z"/>',
-      money: '<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01m12 0h.01"/>',
-      left: '<path d="m14 6-6 6 6 6"/>', right: '<path d="m10 6 6 6-6 6"/>'
-    };
-    return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.help}</svg>`;
-  }
+  const icon = name => PondIcons(name);
+  const actionIcons = { 'add-record':'plus', 'pond-create':'plus', 'record-type':'plus', 'money-type':'wallet', 'export':'cloud-download', 'draft-export':'cloud-download', 'rollback':'backup', 'plan':'crown', 'purchase':'credit-card', 'edit':'pencil', 'trash':'trash-2', 'recover':'rotate-ccw', 'archive':'archive', 'filter':'filter', 'filter-reset':'rotate-ccw', 'workspace':'fish', 'species-search':'search', 'task-toggle':'check' };
   function nav() {
-    $('desktopNav').innerHTML = Object.entries(titles).filter(([k]) => k !== 'more').map(([k, v]) => `<a href="#${k}" ${page === k ? 'aria-current="page"' : ''}>${v}</a>`).join('');
+    $('desktopNav').innerHTML = Object.entries(titles).filter(([k]) => k !== 'more').map(([k, v]) => `<a href="#${k}" ${page === k ? 'aria-current="page"' : ''}>${icon(k)}<span>${v}</span></a>`).join('');
     $('mobileNav').innerHTML = [['overview', 'Home', 'home'], ['ponds', 'Ponds', 'ponds'], ['records', 'Add record', 'plus'], ['tasks', 'Tasks', 'tasks'], ['more', 'More', 'more']].map(([k, v, i]) => `<a href="#${k}" class="${k === 'records' ? 'nav-add' : ''}" ${k === 'records' ? 'data-action="add-record"' : ''} ${(page === k || (k === 'more' && ['money', 'tools', 'profile', 'settings', 'plans'].includes(page))) ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(i)}</span><span>${v}</span></a>`).join('');
     const available = state.data.ponds.filter(p => !p.archived && !p.deletedAt);
     $('pondContext').innerHTML = available.length ? available.map(p => `<option value="${esc(p.id)}" ${p.id === state.data.activePondId ? 'selected' : ''}>${esc(p.name)}</option>`).join('') : '<option value="">No active ponds</option>';
@@ -71,7 +55,7 @@
     if (opened.status === 'migration') banner += `<p><strong>Legacy data found.</strong> Review ${counts(state)}. Valid amounts convert to centavos; historical dates stay unchanged; completion times remain unknown. The original pondwise_v1 will remain untouched.</p>${button('Migrate safely', 'migrate', '', 'primary')}${button('Export original data', 'raw')}`;
     if (store.blocked) banner += `<p><strong>Recovery required.</strong> ${esc(opened.error?.message || 'Storage unavailable.')} Ordinary saves are blocked. Export original data, then use Help & settings to restore a validated backup.</p>${button('Export raw workspace', 'raw')}${link('Open recovery tools', 'settings')}`;
     if (conflict) banner += `<p><strong>Workspace changed in another tab.</strong> Saves are paused. Drafts are retained here; download them before reloading.</p>${button('Export drafts', 'draft-export')}${button('Reload saved workspace', 'reload')}`;
-    $('workspaceBanner').innerHTML = banner;
+    $('workspaceBanner').innerHTML = banner; $('workspaceBanner').dataset.status = demo && usable() ? 'demo' : 'attention';
   }
   function counts(s) { return D.COLLECTIONS.map(k => `${s.data[k].length} ${k}`).join(', '); }
   function draftKey(form) { return [demo ? 'demo' : 'farm', state.data.activePondId || 'none', form.id].join(':'); }
@@ -98,11 +82,11 @@
     if (!signedIn || legal) {
       $('main').dataset.page = legal ? 'legal' : 'signup';
       $('main').innerHTML = legal ? PondAccount.legalView(location.hash.slice(1)) : PondAccount.authView();
-      $('notice').textContent = ''; return;
+      $('notice').textContent = ''; $('planOffer').innerHTML = ''; if ($('purchaseDialog').open) $('purchaseDialog').close(); polish(); return;
     }
     nav();
     const routes = { overview: overviewView, ponds: pondsView, tasks: tasksView, records: recordsView, money: moneyView, tools: toolsView, settings: settingsView, profile: () => PondAccount.profileView(tier), plans: plansView, more: moreView };
-    $('main').dataset.page = page; $('main').innerHTML = routes[page](); hydrate();
+    $('main').dataset.page = page; $('main').innerHTML = routes[page](); hydrate(); polish(); renderOffer();
     document.querySelectorAll('form[data-draft]').forEach(form => { if (!usable()) form.querySelectorAll('button[type=submit]').forEach(b => { b.disabled = true; }); });
     if (page === 'tools') searchSpecies('');
     const focusTarget = focusId ? $(focusId) : focusData ? [...document.querySelectorAll('[data-action]')].find(e => Object.entries(focusData).every(([k, v]) => e.dataset[k] === v)) : null;
@@ -110,7 +94,7 @@
     if (editing) document.querySelector('form[data-editing]:not([data-editing=""])')?.scrollIntoView({ block: 'start' });
   }
   function route() {
-    capture(); const hash = location.hash.slice(1); page = aliases[hash] || (titles[hash] ? hash : 'overview'); render(false); $('main').focus({ preventScroll: true }); if (!editing) window.scrollTo({ top: 0, behavior: 'instant' });
+    capture(); $('notice').textContent = ''; const hash = location.hash.slice(1); page = aliases[hash] || (titles[hash] ? hash : 'overview'); render(false); $('main').focus({ preventScroll: true }); if (!editing) window.scrollTo({ top: 0, behavior: 'instant' });
   }
   function commit(next, message, form = null, recovery = false) {
     if (!recovery && !usable()) throw new Error('Finish migration or resolve recovery/conflict before saving.');
@@ -135,10 +119,10 @@
     const water = p ? D.latestWater(state.data, p.id) : null;
     const totals = p ? D.totals(state.data, p.id) : { net: 0 };
     const stat = (i, tone, value, label, route) => `<a class="dash-stat ${tone}" href="#${route}"><span class="icon-chip">${icon(i)}</span><strong>${esc(value)}</strong><span>${label}</span></a>`;
-    return `<div class="mobile-dashboard"><header class="greeting"><div><p class="eyebrow">PONDWISE · ${demo ? 'DEMO' : 'YOUR NOTEBOOK'}</p><h1>Hello, pond keeper <span aria-hidden="true">☀</span></h1><p>A little care, every day.</p></div><a class="profile-link" href="#profile" aria-label="Your profile">${icon('help')}</a></header>
+    return `<div class="mobile-dashboard"><header class="greeting"><div><p class="eyebrow">PONDWISE · ${demo ? 'DEMO' : 'YOUR NOTEBOOK'}</p><h1>Hello, pond keeper <span class="greeting-sun">${icon('sun')}</span></h1><p>A little care, every day.</p></div><a class="profile-link" href="#profile" aria-label="Your profile">${icon('profile')}</a></header>
       <div class="summary-pair"><a class="summary-card" href="#ponds"><span class="icon-chip">${icon('ponds')}</span><div><span>Active pond</span><strong>${esc(p?.name || 'Create your first pond')}</strong><small>${p ? esc(p.stock.common || 'Add a stock snapshot') : 'Start your notebook'}</small></div>${icon('right')}</a><a class="summary-card" href="#tasks"><span class="icon-chip peach">${icon('tasks')}</span><div><span>Work due</span><strong>${due.length} ${due.length === 1 ? 'task' : 'tasks'}</strong><small>Today & overdue</small></div>${icon('right')}</a></div>
-      <section class="quick-section"><h2>Quick Access</h2><div class="quick-access">${[['ponds','Ponds','ponds'],['tasks','Tasks','tasks'],['records','Records','records'],['tools','Tools','tools'],['settings','Help','help']].map(([route,label,i],n) => `<a href="#${route}"><span class="icon-chip tone-${n}">${icon(i)}</span><span>${label}</span></a>`).join('')}</div></section>
-      <section><h2>Overview <span class="section-note">Active pond</span></h2><div class="dash-stats">${stat('feed','lavender',access().autoCalculator ? (rec.kg === undefined ? '—' : rec.kg.toFixed(2) + ' kg') : 'Elite','Auto feed estimate','tools')}${stat('records','mint',p ? feed.toFixed(2) + ' kg' : '—','Feed logged today','records')}${stat('water','sky',water?.ph ?? '—','Latest water pH','records')}${stat('money','peach',access().money ? (p ? currency(totals.net) : '—') : 'Pro+','Profit / net cash flow¹','money')}</div><p class="dash-footnote">Automatic calculation requires PondElite. ${water ? 'Water: ' + esc(water.date) : 'No water check yet.'} ¹Sold minus bought, all saved dates.</p></section>
+      <section class="quick-section"><h2>Quick Access</h2><div class="quick-access">${[['ponds','Ponds','ponds'],['tasks','Tasks','tasks'],['records','Records','records'],['tools','Tools','tools'],['settings','Settings','settings']].map(([route,label,i],n) => `<a href="#${route}"><span class="icon-chip tone-${n}">${icon(i)}</span><span>${label}</span></a>`).join('')}</div></section>
+      <section><h2>Overview <span class="section-note">Active pond</span></h2><div class="dash-stats">${stat('feed','ocean',access().autoCalculator ? (rec.kg === undefined ? '—' : rec.kg.toFixed(2) + ' kg') : 'Elite','Auto feed estimate','tools')}${stat('records','mint',p ? feed.toFixed(2) + ' kg' : '—','Feed logged today','records')}${stat('water','sky',water?.ph ?? '—','Latest water pH','records')}${stat('money','peach',access().money ? (p ? currency(totals.net) : '—') : 'Pro+','Profit / net cash flow¹','money')}</div><p class="dash-footnote">Automatic calculation requires PondElite. ${water ? 'Water: ' + esc(water.date) : 'No water check yet.'} ¹Sold minus bought, all saved dates.</p></section>
       <section class="schedule"><div class="section-heading"><h2>Today’s Schedule</h2><a href="#tasks">View all ${icon('right')}</a></div><p class="schedule-date">${esc(day)} · ${esc(state.settings.timezone)}</p>${todayTasks.length ? `<ul>${todayTasks.slice(0,4).map(t => `<li><span class="schedule-dot ${t.done ? 'done' : ''}"></span><div><strong>${esc(t.title)}</strong><small>${esc(t.type)}</small></div><span class="status-pill ${t.done ? 'done' : ''}">${t.done ? 'Done' : 'Due today'}</span></li>`).join('')}</ul>${todayTasks.length > 4 ? `<a class="schedule-all" href="#tasks">View all ${todayTasks.length} tasks</a>` : ''}` : `<p class="schedule-empty">${p ? 'No tasks planned for today.' : 'Create a pond to plan your daily work.'}</p><a class="schedule-all" href="#${p ? 'tasks' : 'ponds'}">${p ? 'Plan a task' : 'Create a pond'} ${icon('plus')}</a>`}</section>
       <a class="helper-card" href="#settings"><span class="helper-mark">${icon('help')}</span><div><small>HERE TO HELP</small><h2>PondWise Helper</h2><p>Answers from the selected pond’s saved stock and observations.</p><span class="helper-cta">Open helper ${icon('right')}</span></div></a>${water ? `<section class="mobile-water"><details><summary>Latest water observation</summary>${waterText(water)}${button('Add water check','record-type','data-col="waterLogs"')}</details></section>` : ''}</div>`;
   }
@@ -151,7 +135,7 @@
   function form(id, content, label = 'Save record', edit = '') { content = content.replaceAll('id="field-', `id="${id}-field-`).replaceAll('for="field-', `for="${id}-field-`); return `<form id="${id}" data-draft data-editing="${esc(edit)}" novalidate><div class="form-error" role="alert" tabindex="-1" hidden></div><div class="form-grid">${content}</div><p class="draft-note">Drafts stay with this pond while you move between screens. Export drafts in Settings before leaving or reloading.</p><div class="actions"><button class="primary" type="submit">${esc(label)}</button>${button('Discard draft', 'discard', `data-form="${id}"`)}</div></form>`; }
   function pondsView() {
     const p = active(), count = state.data.ponds.filter(p => !p.archived && !p.deletedAt).length;
-    const cards = state.data.ponds.filter(p => !p.deletedAt).map(p => `<article class="panel"><span class="pill">${p.archived ? 'Archived' : p.id === state.data.activePondId ? 'Active pond' : 'Pond'}</span><h2 class="wrap">${esc(p.name)}</h2><p>${p.size === null ? 'Area not recorded' : esc(p.size) + ' m²'}<br>${esc(p.stock.common || p.stock.scientific || 'Species not recorded')}<br>${p.stock.count === null ? 'Count missing' : esc(p.stock.count) + ' fish'}; ${p.stock.avgWeightG === null ? 'weight missing' : esc(p.stock.avgWeightG) + ' g average'}</p><small>Stock updated: ${esc(p.stock.updatedAt || 'Unknown (legacy or not yet recorded)')}</small><div class="actions">${!p.archived ? button('Select pond', 'select-pond', `data-id="${esc(p.id)}"`) : ''}${button(p.archived ? 'Reactivate' : 'Archive', 'archive', `data-id="${esc(p.id)}"`)}${button('Move to trash', 'trash', `data-col="ponds" data-id="${esc(p.id)}"`, 'danger')}</div></article>`).join('');
+    const cards = state.data.ponds.filter(p => !p.deletedAt).map(p => `<article class="panel pond-card"><div class="pond-card-art" aria-hidden="true">${icon('fish')}${icon('waves')}</div><span class="pill">${p.archived ? 'Archived' : p.id === state.data.activePondId ? 'Active pond' : 'Pond'}</span><h2 class="wrap">${esc(p.name)}</h2><p>${p.size === null ? 'Area not recorded' : esc(p.size) + ' m²'}<br>${esc(p.stock.common || p.stock.scientific || 'Species not recorded')}<br>${p.stock.count === null ? 'Count missing' : esc(p.stock.count) + ' fish'}; ${p.stock.avgWeightG === null ? 'weight missing' : esc(p.stock.avgWeightG) + ' g average'}</p><small>Stock updated: ${esc(p.stock.updatedAt || 'Unknown (legacy or not yet recorded)')}</small><div class="actions">${!p.archived ? button('Select pond', 'select-pond', `data-id="${esc(p.id)}"`) : ''}${button(p.archived ? 'Reactivate' : 'Archive', 'archive', `data-id="${esc(p.id)}"`)}${button('Move to trash', 'trash', `data-col="ponds" data-id="${esc(p.id)}"`, 'danger')}</div></article>`).join('');
     return head('Ponds', `${count} active ponds. ${tier === 'elite' ? 'Unlimited' : D.limit(tier)} allowed in ${tier} preview. Existing ponds survive tier changes.`) + `<div class="cards">${cards || empty('No ponds yet. Create one below.')}</div><section class="panel" style="margin-top:24px"><h2>Create a pond</h2>${form('pond-create', field('name', 'Pond name (required)', 'text', '', 'required maxlength="120"') + num('size', 'Area (m², optional)', '', 0, Number.MAX_VALUE, true) + field('notes', 'Notes (optional)', 'textarea', '', 'maxlength="2000"', true), 'Create pond')}</section>${p ? `<section class="panel"><h2>Edit ${esc(p.name)} and fish stock</h2><p>Fish stock is a current snapshot. Sold entries and health notes do not change the count automatically.</p>${form('pond-edit', field('name', 'Pond name (required)', 'text', p.name, 'required maxlength="120"') + num('size', 'Area (m², optional)', p.size, 0, Number.MAX_VALUE, true) + field('notes', 'Pond notes (optional)', 'textarea', p.notes, 'maxlength="2000"', true) + field('common', 'Common species name (optional)', 'text', p.stock.common, 'maxlength="200"') + field('scientific', 'Scientific name (optional)', 'text', p.stock.scientific, 'maxlength="200"') + num('count', 'Fish count (optional; whole fish)', p.stock.count, 0, 10000000, true, '1') + num('avgWeightG', 'Average weight (g, optional)', p.stock.avgWeightG, 0, 1000000, true), 'Save pond and fish')}<div class="actions">${link('Look up a species', 'tools')}${button('Remove fish from pond', 'clear-stock', `data-id="${esc(p.id)}"`, 'danger')}</div><h3>Automatic feed estimate</h3>${access().autoCalculator ? feedText(p) : `<p class="empty">PondElite is required for automatic pond calculations. The manual Feed Estimator and standard feed table remain available in Tools.</p>`}</section>` : ''}`;
   }
   function scopeOptions(scope) { return `<option value="active" ${!scope || scope === 'active' ? 'selected' : ''}>Active pond</option><option value="all" ${scope === 'all' ? 'selected' : ''}>All ponds</option>` + state.data.ponds.filter(p => !p.deletedAt).map(p => `<option value="${esc(p.id)}" ${scope === p.id ? 'selected' : ''}>${esc(p.name)}${p.archived ? ' (archived)' : ''}</option>`).join(''); }
@@ -175,7 +159,7 @@
   }
   function historyRows(rows, actions = true) {
     if (!rows.length) return empty('No matching records. Add a record or reset your filters.');
-    return `<ul class="timeline">${rows.map(r => `<li class="row"><div><span class="pill">${esc(labels[r.col])}</span><h3>${esc(describe(r))}</h3><p>${esc(r.date)} • ${esc(pondName(r.pondId))}${r.category ? ' • ' + esc(r.category) : ''}</p>${r.notes ? `<p class="wrap">${esc(r.notes)}</p>` : ''}</div>${actions ? `<div class="actions">${button('Edit', 'edit', `data-col="${r.col}" data-id="${esc(r.id)}"`)}${button('Trash', 'trash', `data-col="${r.col}" data-id="${esc(r.id)}"`, 'danger')}</div>` : ''}</li>`).join('')}</ul>`;
+    return `<ul class="timeline">${rows.map(r => `<li class="row" data-record-kind="${esc(r.col)}"><div><span class="pill">${icon(({feedLogs:'feed',waterLogs:'water',healthLogs:'heart-pulse',maintLogs:'tools',expenses:'money',sales:'money'})[r.col])}${esc(labels[r.col])}</span><h3>${esc(describe(r))}</h3><p>${esc(r.date)} • ${esc(pondName(r.pondId))}${r.category ? ' • ' + esc(r.category) : ''}</p>${r.notes ? `<p class="wrap">${esc(r.notes)}</p>` : ''}</div>${actions ? `<div class="actions">${button('Edit', 'edit', `data-col="${r.col}" data-id="${esc(r.id)}"`)}${button('Trash', 'trash', `data-col="${r.col}" data-id="${esc(r.id)}"`, 'danger')}</div>` : ''}</li>`).join('')}</ul>`;
   }
   function paginate(rows, kind, renderer = historyRows) {
     const f = filters[kind], pages = Math.max(1, Math.ceil(rows.length / 12)); f.page = Math.min(f.page, pages);
@@ -231,7 +215,7 @@
     return head('Feed', 'Estimate feed manually, review the standard feed table, and—on PondElite—see per-pond rations.') +
       `<section class="panel"><h2>Feed Estimator</h2><p>Enter fish count and average weight. Biomass = count × grams ÷ 1,000; estimated daily feed = biomass × rate ÷ 100.</p>${form('calculator', num('count', 'Fish count (required)', active()?.stock.count, 0, 10000000, false, '1') + num('avgWeightG', 'Average weight (g, required)', active()?.stock.avgWeightG, 0, 1000000) + num('rate', 'Manual rate override (%, optional; >0 to 15)', '', 0, 15, true), 'Estimate feed')}<div id="feedResult" role="status">${feedText(active())}</div><p class="muted">This estimator does not save or change pond stock.</p></section>` +
       `<section class="panel"><h2>Standard feed table</h2>${table}<p class="muted">PondWise size guide v1. Starting estimates only; adjust for species, appetite, water conditions and local aquaculture advice.</p></section>` +
-      `<section class="panel"><h2>Per-pond rations</h2>${access().pondRations ? (rations || empty('Create a pond and save fish stock to calculate rations.')) : `<p class="empty">Per-pond rations require PondElite. The Feed Estimator and standard feed table remain available.</p>${link('View subscription preview', 'plans')}</section>`}</section>` +
+      `<section class="panel"><h2>Per-pond rations</h2>${access().pondRations ? (rations || empty('Create a pond and save fish stock to calculate rations.')) : `<p class="empty">Per-pond rations require PondElite. The Feed Estimator and standard feed table remain available.</p>${link('View subscription preview', 'plans')}`}</section>` +
       `<section class="panel"><h2>Species lookup</h2><label for="speciesSearch">Common name, genus or scientific name</label><input type="search" id="speciesSearch" maxlength="200"><div class="actions">${button('Search species', 'species-search')}</div><p id="speciesStatus" role="status"></p><ul id="speciesResults" class="timeline"></ul></section>`;
   }
   const speciesSearch = PondSpecies.createSearch(SPECIES_LIST, (...args) => fetch(...args));
@@ -252,15 +236,45 @@
   }
   function lastBackup() { try { return localStorage.getItem(store.key + '_last_export') || 'No download requested in this browser'; } catch (_) { return 'Unavailable'; } }
   function previewHTML() { return preview ? `<h3>Replacement preview</h3><p>${esc(counts(preview))}</p><p>${preview.data.ponds.filter(p => !p.archived && !p.deletedAt).length} active ponds; tier limit ${D.limit(tier)}. Over-limit data will be retained, with creation/reactivation blocked. This replaces only the ${demo ? 'demo' : 'farm'} workspace and retains a rollback snapshot. Existing drafts will stay available.</p><div class="actions">${button('Restore this backup', 'restore', '', 'primary')}${button('Cancel restore', 'restore-cancel')}</div>` : ''; }
+  const plans = [
+    {id:'start',name:'PondStart',label:'Free',icon:'waves',limit:'1 active pond',intro:'The essentials for your first pond.',features:['Manual feed estimator','Daily tasks and records','PondWise Helper']},
+    {id:'pro',name:'PondPro',label:'Pro',icon:'sparkles',limit:'Up to 5 active ponds',intro:'More room for your growing farm.',features:['Everything in Free','Bought and sold records','Money Calculator']},
+    {id:'elite',name:'PondElite',label:'Elite',icon:'crown',limit:'Unlimited active ponds',intro:'Your complete pond toolkit.',features:['Everything in Pro','Automatic feed and pond rations','Backup and restore']}
+  ];
   function plansView() {
-    const plans = [
-      ['start', 'PondStart', '1 active pond', 'Feed Estimator, standard feed table, Tasks and PondWise Helper.', 'No Money entry, Auto Calculator, Pond Rations or Backup Data.'],
-      ['pro', 'PondPro', 'Up to 5 active ponds', 'PondStart features plus the Money Calculator.', 'No Auto Calculator, Pond Rations or Backup Data.'],
-      ['elite', 'PondElite', 'Unlimited active ponds', 'Full access to Money, Auto Calculator, Pond Rations and Backup Data.', 'All demo features unlocked.']
-    ];
-    return head('Subscription preview', 'Local demo selection only—no billing, account or payment processing.') + `<div class="cards">${plans.map(([id, name, limit, included, excluded]) => `<section class="panel ${tier === id ? 'plan-selected' : ''}"><h2>${name}</h2><p><strong>${limit}</strong></p><p>${included}</p><p>${excluded}</p>${button(tier === id ? 'Current demo tier' : 'Choose ' + name, 'plan', `data-tier="${id}" ${tier === id ? 'disabled' : ''}`)}</section>`).join('')}</div><p class="muted" style="margin-top:24px">Changing demo tiers preserves saved data. Pond limits apply to creation and reactivation; downgrades do not delete existing ponds or transactions.</p>`;
+    return head('Find your pond plan', 'Choose the tools that fit your farm. All plans are currently local previews.') + `<div class="cards plan-grid">${plans.map(p => `<section class="panel plan-card plan-${p.id} ${tier === p.id ? 'plan-selected' : ''}"><div class="plan-top"><span class="feature-icon">${icon(p.icon)}</span><span class="plan-label">${tier === p.id ? 'Current plan' : p.label}</span></div><h2>${p.name}</h2><p>${p.intro}</p><strong class="plan-limit">${p.limit}</strong><ul class="plan-features">${p.features.map(f => `<li>${icon('check')}<span>${esc(f)}</span></li>`).join('')}</ul>${button(tier === p.id ? 'Current demo tier' : 'Preview ' + p.name, 'plan', `data-tier="${p.id}" ${tier === p.id ? 'disabled' : ''}`, 'primary')}${p.id !== 'start' ? button('Purchase '+p.label, 'purchase', `data-tier="${p.id}"`) : ''}</section>`).join('')}</div><p class="plan-note">${icon('shield-check')}<span>No payment is collected. Switching a preview keeps your ponds and records intact.</span></p>`;
   }
-  function moreView() { return head('More', 'Tools and settings for your pond notebook.') + `<div class="panel actions">${link('Money', 'money')}${link('Tools', 'tools')}${link('Profile', 'profile')}${link('Settings', 'settings')}${link('Plan preview', 'plans')}</div>`; }
+  function moreView() {
+    const items = [['money','Money','Track bought, sold and cash flow.'],['tools','Feed & tools','Estimate feed and explore species.'],['profile','Profile','Your photo and personal details.'],['settings','Settings','Preferences, privacy and saved data.'],['plans','Plans','Compare Free, Pro and Elite.']];
+    return head('Your pond toolkit', 'Everything else you need to care for your farm.') + `<div class="more-grid">${items.map(([id,title,description]) => `<a class="panel more-card" href="#${id}"><span class="feature-icon">${icon(id)}</span><div><h2>${title}</h2><p>${description}</p></div>${icon('right')}</a>`).join('')}</div>`;
+  }
+  function polish() {
+    const main = $('main');
+    main.dataset.tone = ({ponds:'teal',tasks:'amber',records:'blue',money:'teal',tools:'amber',profile:'blue',settings:'teal',plans:'amber'})[page] || 'blue';
+    const header = main.querySelector('.page-head');
+    if (header) { header.classList.add('visual-page-head'); header.insertAdjacentHTML('afterbegin', `<span class="page-mark">${icon(page)}</span>`); }
+    const headings = [['backup|rollback','backup'],['privacy|security','shield-check'],['password','lock-keyhole'],['picture|photo','camera'],['profile','profile'],['dark','moon'],['support|helper','help'],['about','info'],['terms','file-text'],['log out','log-out'],['trash|data|settings','database'],['feed|ration','feed'],['species|stock|fish','fish'],['task|date|completed|work','tasks'],['water','water'],['bought|sold|profit|money','money'],['pond|practice','ponds']];
+    main.querySelectorAll('.panel > h2, .setting-row h2, .setting-detail summary').forEach(h => {
+      if (h.closest('.plan-card, .profile-summary, .pond-card')) return;
+      const key = headings.find(([pattern]) => new RegExp(pattern,'i').test(h.textContent))?.[1] || page;
+      h.classList.add('section-title'); h.insertAdjacentHTML('afterbegin', `<span class="section-icon">${icon(key)}</span>`);
+    });
+    main.querySelectorAll('.metric').forEach((m,i) => m.insertAdjacentHTML('afterbegin', `<span class="metric-icon">${icon(page === 'money' ? ['wallet','arrow-up-right','money'][i] : ['feed','records','tasks'][i])}</span>`));
+    const add = document.querySelector('.context [data-action="add-record"]');
+    if (add && !add.querySelector('svg')) { add.setAttribute('aria-label','Add record'); add.insertAdjacentHTML('afterbegin',icon('plus')); }
+  }
+  function offerKey() { return planKey() + '_offer_dismissed_v1'; }
+  function renderOffer() {
+    let dismissed = false; try { dismissed = localStorage.getItem(offerKey()) === 'true'; } catch (_) { /* Dismissal still works in memory. */ }
+    $('planOffer').innerHTML = page === 'overview' && tier !== 'elite' && !dismissed && !offerDismissed ? `<aside class="plan-offer" aria-labelledby="offerTitle"><button type="button" class="icon-button offer-close" data-action="offer-close" aria-label="Close plan offer">${icon('x')}</button><div class="offer-heading"><span class="feature-icon">${icon('crown')}</span><div><span class="offer-eyebrow">MORE FOR YOUR PONDS</span><h2 id="offerTitle">Make room for Elite.</h2></div></div><p>Unlimited ponds, automatic feed estimates, and backup & restore.</p><div class="offer-actions">${button('Purchase plan', 'purchase', 'data-tier="elite"', 'primary')}<a href="#plans">Compare plans ${icon('arrow-right')}</a></div></aside>` : '';
+  }
+  let offerDismissed = false;
+  function purchasePlan(id) {
+    const p = plans.find(p => p.id === id && p.id !== 'start'); if (!p) return;
+    const dialog = $('purchaseDialog');
+    dialog.innerHTML = `<div class="purchase-header"><span class="feature-icon">${icon(p.icon)}</span><button type="button" class="icon-button" data-action="purchase-close" aria-label="Close purchase details">${icon('x')}</button></div><p class="eyebrow">YOUR NEXT PLAN</p><h2 id="purchaseTitle">${p.name}</h2><p>${p.intro}</p><ul class="plan-features">${p.features.map(f => `<li>${icon('check')}<span>${esc(f)}</span></li>`).join('')}</ul><div class="checkout-note" id="purchaseDescription">Checkout is not connected yet. You can explore this plan with a free local preview. No payment will be taken.</div><div class="purchase-actions">${button('Try '+p.label+' preview', 'plan', `data-tier="${p.id}"`, 'primary')}${button('Close', 'purchase-close')}</div>`;
+    dialog.showModal();
+  }
   function formError(form, error) {
     form.querySelectorAll('.field-error').forEach(e => e.remove()); form.querySelectorAll('[aria-invalid]').forEach(e => { e.removeAttribute('aria-invalid'); e.removeAttribute('aria-describedby'); });
     const summary = form.querySelector('.form-error'); summary.hidden = false; summary.textContent = 'Not saved. ' + error.message;
@@ -310,6 +324,9 @@
     if (!PondAccount.signedIn()) return;
     const a = el.dataset.action, id = el.dataset.id, col = el.dataset.col;
     capture();
+    if (a === 'offer-close') { offerDismissed = true; try { localStorage.setItem(offerKey(), 'true'); } catch (_) {} $('planOffer').innerHTML = ''; $('main').focus({preventScroll:true}); return; }
+    if (a === 'purchase') { purchasePlan(el.dataset.tier); return; }
+    if (a === 'purchase-close') { $('purchaseDialog').close(); return; }
     if (a === 'add-record') { if (page === 'records') { $('recordType').focus(); } else location.hash = 'records'; return; }
     if (a === 'workspace') { if (PondAccount.isDemo()) throw new Error('The demo login uses its separate practice notebook. Sign out to open your personal profile.'); editing = null; preview = null; openWorkspace(!demo); if (demo && opened.status === 'new') seedDemo(); render(false); notify(demo ? 'Opened the separate demo workspace.' : 'Returned to your farm notebook.'); return; }
     if (a === 'export') { if (!access().backup) throw new Error('Backup Data requires PondElite.'); if (store.blocked) throw new Error('Export raw workspace while in recovery.'); await download(store.export(), `pondwise-${demo ? 'demo' : 'farm'}-${day}-r${state.revision}.json`); try { localStorage.setItem(store.key + '_last_export', now()); } catch (_) { /* export already requested */ } notify('Backup download requested. Check your downloads and keep the file safe.'); return; }
@@ -321,7 +338,7 @@
     if (a === 'rollback') { if (!access().backup) throw new Error('Backup Data requires PondElite.'); restoreGeneration++; preview = store.rollback(); render(); return; }
     if (a === 'restore-cancel') { restoreGeneration++; preview = null; render(); return; }
     if (a === 'restore') { if (!access().backup) throw new Error('Backup Data requires PondElite.'); if (!preview) return; commit(preview, 'Backup restored and verified. Previous workspace retained as rollback.', null, true); preview = null; day = D.today(state.settings.timezone); render(); return; }
-    if (a === 'plan') { localStorage.setItem(planKey(), D.plan(el.dataset.tier)); tier = D.plan(el.dataset.tier); preview = null; render(); notify('Demo tier changed. All existing data was kept.'); return; }
+    if (a === 'plan') { if ($('purchaseDialog').open) $('purchaseDialog').close(); localStorage.setItem(planKey(), D.plan(el.dataset.tier)); tier = D.plan(el.dataset.tier); preview = null; render(); notify('Demo tier changed. All existing data was kept.'); return; }
     if (a === 'discard') { const form = $(el.dataset.form); delete drafts[draftKey(form)]; form.dataset.dirty = 'false'; editing = null; render(false); notify('Draft discarded.'); return; }
     if (a === 'species-search') { searchSpecies($('speciesSearch').value); return; }
     if (a === 'use-species') {
@@ -431,7 +448,7 @@
       if (rect.top < top + 8 || rect.bottom > bottom - 8) control.scrollIntoView({ block: 'center', behavior: 'instant' });
     });
   }
-  document.addEventListener('focusin', ensureFocusVisible);
+  document.addEventListener('focusin', event => { ensureFocusVisible(); const offer = document.querySelector('.plan-offer'); if (!offer || offer.contains(event.target) || !event.target.matches('a,button,input,select,textarea,summary')) return; const a = offer.getBoundingClientRect(), b = event.target.getBoundingClientRect(); if (b.width && b.height && a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) offer.hidden = true; });
   document.addEventListener('focusout', () => requestAnimationFrame(ensureFocusVisible));
   window.visualViewport?.addEventListener('resize', ensureFocusVisible);
   window.addEventListener('hashchange', route);

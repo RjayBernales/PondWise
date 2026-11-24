@@ -59,3 +59,7 @@ Intentionally outside this release: server accounts, server backend, sync, payme
 ## Browser-local profiles
 
 Signup precedes dashboard access. Profile supports photo, name, email, plan preview and password change. Settings adds persistent light/dark themes, privacy/security information, data management, backup/restore according to tier, help, diagnostic report download, app information, terms, privacy policy and tab-local logout. Existing pond records remain intact. This UI gate is not encryption or server authentication. The static demo credentials `user@gmail.com` / `user123` open the separate seeded demo notebook automatically and retain later edits. Personal and demo profiles are separate. See README for storage and account limitations.
+
+## Visual system and plan offer
+
+All routes use one blue, teal and amber system, with local Lucide icons, colored section markers, pond artwork, plan feature cards and light/dark themes. A dismissible dashboard offer opens plan details in a native dialog. Purchase remains an informational entry point until checkout is configured; local tier previews remain separate and never imply a completed purchase. Dismissal persists per workspace, Elite hides the offer, and focused controls are protected from being obscured by it.
