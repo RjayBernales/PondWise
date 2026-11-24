@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const D = PondDomain, S = PondStorage, $ = id => document.getElementById(id);
-  const titles = { overview: 'Overview', ponds: 'Ponds', tasks: 'Tasks', records: 'Records', money: 'Money', tools: 'Tools', settings: 'Help & settings', plans: 'Plan preview', more: 'More' };
+  const titles = { overview: 'Overview', ponds: 'Ponds', tasks: 'Tasks', records: 'Records', money: 'Money', tools: 'Tools', profile: 'Profile', settings: 'Settings', plans: 'Plan preview', more: 'More' };
   const aliases = { dashboard: 'overview', feed: 'tools', finance: 'money', guide: 'settings', help: 'settings' };
   const labels = { feedLogs: 'Feeding', waterLogs: 'Water', healthLogs: 'Fish health', maintLogs: 'Maintenance', expenses: 'Bought', sales: 'Sold', tasks: 'Task' };
   const now = () => new Date().toISOString();
@@ -61,13 +61,13 @@
   }
   function nav() {
     $('desktopNav').innerHTML = Object.entries(titles).filter(([k]) => k !== 'more').map(([k, v]) => `<a href="#${k}" ${page === k ? 'aria-current="page"' : ''}>${v}</a>`).join('');
-    $('mobileNav').innerHTML = [['overview', 'Home', 'home'], ['ponds', 'Ponds', 'ponds'], ['records', 'Add record', 'plus'], ['tasks', 'Tasks', 'tasks'], ['more', 'More', 'more']].map(([k, v, i]) => `<a href="#${k}" class="${k === 'records' ? 'nav-add' : ''}" ${k === 'records' ? 'data-action="add-record"' : ''} ${(page === k || (k === 'more' && ['money', 'tools', 'settings', 'plans'].includes(page))) ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(i)}</span><span>${v}</span></a>`).join('');
+    $('mobileNav').innerHTML = [['overview', 'Home', 'home'], ['ponds', 'Ponds', 'ponds'], ['records', 'Add record', 'plus'], ['tasks', 'Tasks', 'tasks'], ['more', 'More', 'more']].map(([k, v, i]) => `<a href="#${k}" class="${k === 'records' ? 'nav-add' : ''}" ${k === 'records' ? 'data-action="add-record"' : ''} ${(page === k || (k === 'more' && ['money', 'tools', 'profile', 'settings', 'plans'].includes(page))) ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(i)}</span><span>${v}</span></a>`).join('');
     const available = state.data.ponds.filter(p => !p.archived && !p.deletedAt);
     $('pondContext').innerHTML = available.length ? available.map(p => `<option value="${esc(p.id)}" ${p.id === state.data.activePondId ? 'selected' : ''}>${esc(p.name)}</option>`).join('') : '<option value="">No active ponds</option>';
     $('pondContext').disabled = !usable() || !available.length;
     $('workspaceBanner').hidden = usable() && !demo;
     let banner = '';
-    if (demo) banner += `<p><strong>Demo workspace</strong> — your farm notebook is separate.</p>${button('Return to farm notebook', 'workspace')}`;
+    if (demo) banner += `<p><strong>Demo workspace</strong> — your farm notebook is separate.</p>${PondAccount.isDemo() ? '' : button('Return to farm notebook', 'workspace')}`;
     if (opened.status === 'migration') banner += `<p><strong>Legacy data found.</strong> Review ${counts(state)}. Valid amounts convert to centavos; historical dates stay unchanged; completion times remain unknown. The original pondwise_v1 will remain untouched.</p>${button('Migrate safely', 'migrate', '', 'primary')}${button('Export original data', 'raw')}`;
     if (store.blocked) banner += `<p><strong>Recovery required.</strong> ${esc(opened.error?.message || 'Storage unavailable.')} Ordinary saves are blocked. Export original data, then use Help & settings to restore a validated backup.</p>${button('Export raw workspace', 'raw')}${link('Open recovery tools', 'settings')}`;
     if (conflict) banner += `<p><strong>Workspace changed in another tab.</strong> Saves are paused. Drafts are retained here; download them before reloading.</p>${button('Export drafts', 'draft-export')}${button('Reload saved workspace', 'reload')}`;
@@ -92,8 +92,16 @@
   function render(preserve = true) {
     const focused = document.activeElement;
     const focusId = focused?.id, focusData = focused?.dataset.action ? { ...focused.dataset } : null;
-    if (preserve) capture(); nav();
-    const routes = { overview: overviewView, ponds: pondsView, tasks: tasksView, records: recordsView, money: moneyView, tools: toolsView, settings: settingsView, plans: plansView, more: moreView };
+    if (preserve) capture();
+    const signedIn = PondAccount.signedIn(), legal = ['terms', 'privacy'].includes(location.hash.slice(1));
+    document.body.classList.toggle('signed-out', !signedIn);
+    if (!signedIn || legal) {
+      $('main').dataset.page = legal ? 'legal' : 'signup';
+      $('main').innerHTML = legal ? PondAccount.legalView(location.hash.slice(1)) : PondAccount.authView();
+      $('notice').textContent = ''; return;
+    }
+    nav();
+    const routes = { overview: overviewView, ponds: pondsView, tasks: tasksView, records: recordsView, money: moneyView, tools: toolsView, settings: settingsView, profile: () => PondAccount.profileView(tier), plans: plansView, more: moreView };
     $('main').dataset.page = page; $('main').innerHTML = routes[page](); hydrate();
     document.querySelectorAll('form[data-draft]').forEach(form => { if (!usable()) form.querySelectorAll('button[type=submit]').forEach(b => { b.disabled = true; }); });
     if (page === 'tools') searchSpecies('');
@@ -127,7 +135,7 @@
     const water = p ? D.latestWater(state.data, p.id) : null;
     const totals = p ? D.totals(state.data, p.id) : { net: 0 };
     const stat = (i, tone, value, label, route) => `<a class="dash-stat ${tone}" href="#${route}"><span class="icon-chip">${icon(i)}</span><strong>${esc(value)}</strong><span>${label}</span></a>`;
-    return `<div class="mobile-dashboard"><header class="greeting"><div><p class="eyebrow">PONDWISE · ${demo ? 'DEMO' : 'YOUR NOTEBOOK'}</p><h1>Hello, pond keeper <span aria-hidden="true">☀</span></h1><p>A little care, every day.</p></div><a class="profile-link" href="#settings" aria-label="Help and settings">${icon('help')}</a></header>
+    return `<div class="mobile-dashboard"><header class="greeting"><div><p class="eyebrow">PONDWISE · ${demo ? 'DEMO' : 'YOUR NOTEBOOK'}</p><h1>Hello, pond keeper <span aria-hidden="true">☀</span></h1><p>A little care, every day.</p></div><a class="profile-link" href="#profile" aria-label="Your profile">${icon('help')}</a></header>
       <div class="summary-pair"><a class="summary-card" href="#ponds"><span class="icon-chip">${icon('ponds')}</span><div><span>Active pond</span><strong>${esc(p?.name || 'Create your first pond')}</strong><small>${p ? esc(p.stock.common || 'Add a stock snapshot') : 'Start your notebook'}</small></div>${icon('right')}</a><a class="summary-card" href="#tasks"><span class="icon-chip peach">${icon('tasks')}</span><div><span>Work due</span><strong>${due.length} ${due.length === 1 ? 'task' : 'tasks'}</strong><small>Today & overdue</small></div>${icon('right')}</a></div>
       <section class="quick-section"><h2>Quick Access</h2><div class="quick-access">${[['ponds','Ponds','ponds'],['tasks','Tasks','tasks'],['records','Records','records'],['tools','Tools','tools'],['settings','Help','help']].map(([route,label,i],n) => `<a href="#${route}"><span class="icon-chip tone-${n}">${icon(i)}</span><span>${label}</span></a>`).join('')}</div></section>
       <section><h2>Overview <span class="section-note">Active pond</span></h2><div class="dash-stats">${stat('feed','lavender',access().autoCalculator ? (rec.kg === undefined ? '—' : rec.kg.toFixed(2) + ' kg') : 'Elite','Auto feed estimate','tools')}${stat('records','mint',p ? feed.toFixed(2) + ' kg' : '—','Feed logged today','records')}${stat('water','sky',water?.ph ?? '—','Latest water pH','records')}${stat('money','peach',access().money ? (p ? currency(totals.net) : '—') : 'Pro+','Profit / net cash flow¹','money')}</div><p class="dash-footnote">Automatic calculation requires PondElite. ${water ? 'Water: ' + esc(water.date) : 'No water check yet.'} ¹Sold minus bought, all saved dates.</p></section>
@@ -240,7 +248,7 @@
     const backup = access().backup
       ? `<section class="panel"><h2>Backup data</h2><p>${store.blocked ? 'Recovery required' : opened.status === 'migration' ? 'Awaiting migration approval' : 'Local workspace readable'} • Revision ${state.revision} • ${demo ? 'Demo' : 'Farm'} workspace</p><p>Downloads include ponds, archives and trash. Keep each backup in a safe location.</p><p>Last backup download requested: ${esc(lastBackup())}</p><div class="actions">${button('Download backup', 'export')}${button('Export drafts', 'draft-export')}${button('Export original legacy data', 'legacy-export')}${button('Preview rollback snapshot', 'rollback')}${button('Download raw rollback snapshot', 'rollback-export')}</div><div class="field" style="margin-top:20px"><label for="restoreFile">Preview replacement backup (JSON, maximum 5 MiB)</label><input id="restoreFile" type="file" accept=".json,application/json"></div><div id="restorePreview" role="status">${previewHTML()}</div></section>`
       : `<section class="panel"><h2>Backup data</h2><p class="empty">Backup download and restore are unavailable on PondStart and PondPro. Choose PondElite for Backup Data.</p>${link('View subscription preview', 'plans')}</section>`;
-    return head('Help & settings', 'This notebook is stored on this browser and origin. It has no account or cloud sync.') + backup + `<section class="panel"><h2>Farm settings</h2>${form('settings', field('timezone', 'Farm timezone (IANA name, required)', 'text', state.settings.timezone, 'required maxlength="100"'), 'Save timezone')}</section><section class="panel"><h2>Trash</h2><p>Items stay recoverable until restored. Trashed ponds retain every dependent task, observation and transaction. There is no automatic purge.</p>${trash.map(r => `<div class="row"><div><h3>${esc(r.col === 'ponds' ? r.name : describe(r))}</h3><p>${esc(r.col)} • ${esc(r.deletedAt)}</p></div>${button('Recover', 'recover', `data-col="${r.col}" data-id="${esc(r.id)}"`)}</div>`).join('') || empty('Trash is empty.')}</section><section class="panel"><h2>PondWise Helper</h2><p>Answers are limited to the selected pond’s saved fish stock, feed, water observations and tasks. It cannot diagnose disease.</p><form id="helper"><label for="question">Ask about the selected pond’s feed, water, stock or tasks</label><input id="question" name="question" maxlength="200" required><div class="actions"><button class="primary" type="submit">Show guidance</button></div></form><div id="helperAnswer" class="helper-answer" role="status"></div></section><section class="panel"><h2>Practice separately</h2><p>Demo records use a separate storage key. Returning to your farm leaves both workspaces intact.</p>${button(demo ? 'Return to farm notebook' : 'Open demo workspace', 'workspace')}</section>`;
+    return head('Settings', 'Preferences, privacy and saved pond information.') + PondAccount.settingsIntro() + '<h2 class="settings-heading">Backup & Restore</h2>' + backup + '<h2 class="settings-heading">Data Management</h2>' + `<section class="panel"><h2>Farm settings</h2>${form('settings', field('timezone', 'Farm timezone (IANA name, required)', 'text', state.settings.timezone, 'required maxlength="100"'), 'Save timezone')}</section><section class="panel"><h2>Trash</h2><p>Items stay recoverable until restored. Trashed ponds retain every dependent task, observation and transaction. There is no automatic purge.</p>${trash.map(r => `<div class="row"><div><h3>${esc(r.col === 'ponds' ? r.name : describe(r))}</h3><p>${esc(r.col)} • ${esc(r.deletedAt)}</p></div>${button('Recover', 'recover', `data-col="${r.col}" data-id="${esc(r.id)}"`)}</div>`).join('') || empty('Trash is empty.')}</section><section class="panel"><h2>PondWise Helper</h2><p>Answers are limited to the selected pond’s saved fish stock, feed, water observations and tasks. It cannot diagnose disease.</p><form id="helper"><label for="question">Ask about the selected pond’s feed, water, stock or tasks</label><input id="question" name="question" maxlength="200" required><div class="actions"><button class="primary" type="submit">Show guidance</button></div></form><div id="helperAnswer" class="helper-answer" role="status"></div></section><section class="panel"><h2>Practice separately</h2><p>Demo records use a separate storage key. Returning to your farm leaves both workspaces intact.</p>${button(demo ? 'Return to farm notebook' : 'Open demo workspace', 'workspace')}</section>` + PondAccount.settingsFooter();
   }
   function lastBackup() { try { return localStorage.getItem(store.key + '_last_export') || 'No download requested in this browser'; } catch (_) { return 'Unavailable'; } }
   function previewHTML() { return preview ? `<h3>Replacement preview</h3><p>${esc(counts(preview))}</p><p>${preview.data.ponds.filter(p => !p.archived && !p.deletedAt).length} active ponds; tier limit ${D.limit(tier)}. Over-limit data will be retained, with creation/reactivation blocked. This replaces only the ${demo ? 'demo' : 'farm'} workspace and retains a rollback snapshot. Existing drafts will stay available.</p><div class="actions">${button('Restore this backup', 'restore', '', 'primary')}${button('Cancel restore', 'restore-cancel')}</div>` : ''; }
@@ -252,7 +260,7 @@
     ];
     return head('Subscription preview', 'Local demo selection only—no billing, account or payment processing.') + `<div class="cards">${plans.map(([id, name, limit, included, excluded]) => `<section class="panel ${tier === id ? 'plan-selected' : ''}"><h2>${name}</h2><p><strong>${limit}</strong></p><p>${included}</p><p>${excluded}</p>${button(tier === id ? 'Current demo tier' : 'Choose ' + name, 'plan', `data-tier="${id}" ${tier === id ? 'disabled' : ''}`)}</section>`).join('')}</div><p class="muted" style="margin-top:24px">Changing demo tiers preserves saved data. Pond limits apply to creation and reactivation; downgrades do not delete existing ponds or transactions.</p>`;
   }
-  function moreView() { return head('More', 'Tools and settings for your pond notebook.') + `<div class="panel actions">${link('Money', 'money')}${link('Tools', 'tools')}${link('Help & settings', 'settings')}${link('Plan preview', 'plans')}</div>`; }
+  function moreView() { return head('More', 'Tools and settings for your pond notebook.') + `<div class="panel actions">${link('Money', 'money')}${link('Tools', 'tools')}${link('Profile', 'profile')}${link('Settings', 'settings')}${link('Plan preview', 'plans')}</div>`; }
   function formError(form, error) {
     form.querySelectorAll('.field-error').forEach(e => e.remove()); form.querySelectorAll('[aria-invalid]').forEach(e => { e.removeAttribute('aria-invalid'); e.removeAttribute('aria-describedby'); });
     const summary = form.querySelector('.form-error'); summary.hidden = false; summary.textContent = 'Not saved. ' + error.message;
@@ -264,6 +272,7 @@
   function n(value) { return value === '' || value === undefined ? null : Number(value); }
   document.addEventListener('input', event => { const form = event.target.closest('form[data-draft]'); if (form) { form.dataset.dirty = 'true'; capture(); } });
   document.addEventListener('submit', event => {
+    if (event.target.matches('[data-account]') || !PondAccount.signedIn()) return;
     event.preventDefault(); const form = event.target; const v = values(form);
     try {
       if (form.id === 'helper') { helper(v.question); return; }
@@ -298,10 +307,11 @@
   });
   async function download(text, name) { const url = URL.createObjectURL(new Blob([text], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
   async function action(el) {
+    if (!PondAccount.signedIn()) return;
     const a = el.dataset.action, id = el.dataset.id, col = el.dataset.col;
     capture();
     if (a === 'add-record') { if (page === 'records') { $('recordType').focus(); } else location.hash = 'records'; return; }
-    if (a === 'workspace') { editing = null; preview = null; openWorkspace(!demo); if (demo && opened.status === 'new') seedDemo(); render(false); notify(demo ? 'Opened the separate demo workspace.' : 'Returned to your farm notebook.'); return; }
+    if (a === 'workspace') { if (PondAccount.isDemo()) throw new Error('The demo login uses its separate practice notebook. Sign out to open your personal profile.'); editing = null; preview = null; openWorkspace(!demo); if (demo && opened.status === 'new') seedDemo(); render(false); notify(demo ? 'Opened the separate demo workspace.' : 'Returned to your farm notebook.'); return; }
     if (a === 'export') { if (!access().backup) throw new Error('Backup Data requires PondElite.'); if (store.blocked) throw new Error('Export raw workspace while in recovery.'); await download(store.export(), `pondwise-${demo ? 'demo' : 'farm'}-${day}-r${state.revision}.json`); try { localStorage.setItem(store.key + '_last_export', now()); } catch (_) { /* export already requested */ } notify('Backup download requested. Check your downloads and keep the file safe.'); return; }
     if (a === 'raw' || a === 'legacy-export') { const raw = localStorage.getItem(a === 'legacy-export' || opened.status === 'migration' ? S.LEGACY : store.recoveryKey); if (raw === null) throw new Error('No original data exists for this key.'); download(raw, 'pondwise-original-' + day + '.json'); return; }
     if (a === 'draft-export') { download(JSON.stringify(drafts, null, 2), 'pondwise-drafts-' + day + '.json'); notify('Draft download requested. This is a reference file, not a restorable notebook backup.'); return; }
@@ -425,8 +435,9 @@
   document.addEventListener('focusout', () => requestAnimationFrame(ensureFocusVisible));
   window.visualViewport?.addEventListener('resize', ensureFocusVisible);
   window.addEventListener('hashchange', route);
+  window.addEventListener('pondwise-account', event => { if (PondAccount.signedIn() && /^(Welcome back|Profile created)/.test(event.detail) && demo !== PondAccount.isDemo()) { openWorkspace(PondAccount.isDemo()); if (demo && opened.status === 'new') seedDemo(); } render(); if (PondAccount.signedIn()) notify(event.detail); });
   window.addEventListener('storage', event => { if (event.key === store.key || event.key === null || (!demo && opened.status === 'migration' && event.key === S.LEGACY)) { capture(); conflict = true; nav(); notify('Another tab changed storage. Export drafts and reload before saving.', true); } if (event.key === planKey()) { tier = D.plan(event.newValue); render(); } });
   window.addEventListener('beforeunload', event => { capture(); if (Object.keys(drafts).length) { event.preventDefault(); event.returnValue = ''; } });
   setInterval(() => { const current = D.today(state.settings.timezone); if (current !== day) { day = current; render(); notify('Farm date updated. Existing draft dates were preserved.'); } }, 30000);
-  openWorkspace(false); route();
+  openWorkspace(PondAccount.isDemo()); if (demo && opened.status === 'new') seedDemo(); route();
 })();

@@ -728,3 +728,64 @@ html { scroll-padding-top:140px; scroll-padding-bottom:110px; }
   .task-agenda { order:1; }
   html { scroll-padding-top:16px; }
 }
+
+/* Account screens share the notebook's spacing and controls. */
+[hidden] { display:none !important }
+.signed-out .sidebar,.signed-out .context,.signed-out .mobile-nav,.signed-out #workspaceBanner { display:none }
+.signed-out .workspace { margin:0; padding:0; width:100% }
+.signed-out #main { max-width:none; padding:0; margin:0 }
+.auth-layout { min-height:100svh; display:grid; grid-template-columns:1fr 1fr; background:var(--surface) }
+.auth-story { background:#e8f1f5; padding:48px 64px; display:flex; flex-direction:column; justify-content:space-between; gap:32px; color:#19354a }
+.auth-story .brand { color:#122f48; font-size:26px }
+.auth-story h1 { font-size:clamp(36px,4vw,60px); line-height:1.12; letter-spacing:-.04em; margin:16px 0 24px }
+.auth-story p { max-width:360px }
+.auth-pond { display:block; width:100%; max-width:440px; height:auto; margin-top:32px }
+.auth-card { align-self:center; width:100%; max-width:520px; padding:48px; margin:auto }
+.auth-card h2 { font-size:32px; letter-spacing:-.03em; margin:8px 0 }
+.auth-card > p { color:var(--muted) }
+.auth-card form,.panel form[data-account] { display:grid; gap:16px }
+.auth-card form { margin-top:32px }
+.auth-card .field,.panel form[data-account] .field { display:grid; gap:8px; margin:0 }
+.auth-card button { width:100% }
+.account-consent { display:flex; align-items:flex-start; gap:12px; font-size:14px }
+.account-consent input { width:20px; min-height:20px; flex-shrink:0; margin-top:3px }
+.local-note { font-size:13px; margin-top:24px; line-height:1.6 }
+.account-error { color:var(--red); padding:12px; border:1px solid currentColor; border-radius:8px; margin:0 }
+.profile-summary { display:flex; align-items:center; gap:24px; flex-wrap:wrap }
+.profile-summary h2,.profile-summary p { margin:0 0 8px; overflow-wrap:anywhere }
+.profile-summary .button { margin-left:auto }
+.avatar { width:88px; height:88px; border-radius:50%; object-fit:cover; flex-shrink:0 }
+.avatar-initials { display:grid; place-items:center; background:#e5eef6; color:#1263ad; font-size:28px; font-weight:700 }
+.plan-badge { display:inline-block; font-size:13px; padding:4px 12px; border-radius:20px; background:var(--ground) }
+.setting-row { display:flex; align-items:center; justify-content:space-between; gap:24px }
+.setting-row h2,.setting-row p { margin:0 }
+[role=switch] { min-width:64px; border-radius:24px }
+[role=switch][aria-checked=true] { background:var(--blue); color:white }
+.setting-detail summary { min-height:44px; display:list-item; align-content:center; cursor:pointer; font-weight:650 }
+.setting-detail[open] summary { margin-bottom:16px }
+.settings-heading { margin-top:32px; font-size:20px }
+.legal-page { max-width:720px; margin:32px auto }
+.panel input[type=file] { display:block; max-width:100%; margin:12px 0 }
+button,.button { transition:background .16s,border-color .16s,transform .16s }
+button:active,.button:active { transform:translateY(1px) }
+:root[data-theme=dark] { color-scheme:dark; --navy:#0d1b2b; --ink:#e2edf5; --muted:#b0c1cf; --line:#45556a; --surface:#192a3c; --ground:#101d2b; --blue:#387fbd; --red:#ffaaaa; --green:#8cd4ab }
+[data-theme=dark] body,[data-theme=dark] .workspace,[data-theme=dark] .mobile-dashboard { background:var(--ground); color:var(--ink) }
+[data-theme=dark] .panel,[data-theme=dark] .metric,[data-theme=dark] .context,[data-theme=dark] .mobile-nav,[data-theme=dark] .summary-card,[data-theme=dark] .schedule,[data-theme=dark] .mobile-water,[data-theme=dark] .helper-card { background:var(--surface); color:var(--ink); border-color:var(--line) }
+[data-theme=dark] input,[data-theme=dark] select,[data-theme=dark] textarea,[data-theme=dark] button,[data-theme=dark] .button { background:var(--surface); color:var(--ink); border-color:var(--line) }
+[data-theme=dark] button:hover,[data-theme=dark] .button:hover { background:#2b435b }
+[data-theme=dark] .primary { background:var(--blue); color:white }
+[data-theme=dark] a { color:#93c9ff }
+[data-theme=dark] .dash-stat,[data-theme=dark] .icon-chip,[data-theme=dark] .helper-mark,[data-theme=dark] .banner,[data-theme=dark] .empty,[data-theme=dark] .calendar [aria-pressed=true] { background:#263b51; color:var(--ink) }
+[data-theme=dark] .greeting h1,[data-theme=dark] .schedule h2,[data-theme=dark] .helper-card h2,[data-theme=dark] .dash-stat strong,[data-theme=dark] .summary-card strong { color:var(--ink) }
+[data-theme=dark] .muted,[data-theme=dark] small,[data-theme=dark] .schedule-date,[data-theme=dark] .dash-footnote,[data-theme=dark] .greeting p { color:var(--muted) }
+[data-theme=dark] .danger { color:var(--red) }
+@media(max-width:800px) {
+  .auth-layout { grid-template-columns:1fr }
+  .auth-story { padding:24px; gap:16px }
+  .auth-story > div,.auth-story > small { display:none }
+  .auth-card { padding:32px 24px; max-width:520px }
+  .profile-summary { gap:16px }
+  .profile-summary .button { margin-left:0 }
+  .legal-page { margin:24px 16px }
+}
+@media(prefers-reduced-motion:reduce) { button,.button { transition:none } }

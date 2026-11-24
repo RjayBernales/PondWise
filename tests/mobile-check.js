@@ -14,6 +14,12 @@ const axePath = process.env.AXE_CORE_PATH;
   const dateInput = '#entry-tasks [name=date]';
   try {
     await page.goto(process.env.PONDWISE_TEST_URL || 'http://127.0.0.1:8877');
+    await page.locator('#account-field-name').fill('Test Keeper');
+    await page.locator('#account-field-email').fill('keeper@example.test');
+    await page.locator('#account-field-password').fill('unique-test-password');
+    await page.locator('#account-field-confirm').fill('unique-test-password');
+    await page.locator('[name=consent]').check();
+    await page.locator('#account-signup [type=submit]').click();
     await page.locator('.mobile-dashboard').waitFor();
     assert.match(await page.locator('.summary-pair').innerText(), /Create your first pond/);
     await go('settings'); await page.locator('button[data-action=workspace]').click();
@@ -24,7 +30,7 @@ const axePath = process.env.AXE_CORE_PATH;
     const before = await page.evaluate(() => localStorage.getItem('pondwise_demo_v2'));
     for (const width of [320, 375, 390, 480, 700, 1440]) {
       await page.setViewportSize({width, height:900});
-      for (const route of ['overview','ponds','tasks','records','money','tools','settings','plans','more']) {
+      for (const route of ['overview','ponds','tasks','records','money','tools','profile','settings','plans','more']) {
         await go(route);
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${route} overflow at ${width}`);
         assert(await page.evaluate(() => { const ids = [...document.querySelectorAll('[id]')].map(e => e.id); return ids.length === new Set(ids).size; }), 'unique IDs');
@@ -90,7 +96,7 @@ const axePath = process.env.AXE_CORE_PATH;
     if (axePath) {
       for (const width of [390,1440]) {
         await page.setViewportSize({width,height:900});
-        for (const route of ['overview','ponds','tasks','records','money','tools','settings','plans','more']) {
+        for (const route of ['overview','ponds','tasks','records','money','tools','profile','settings','plans','more']) {
           await go(route); await page.addScriptTag({path:axePath});
           const violations = await page.evaluate(async () => (await axe.run()).violations);
           assert.deepEqual(violations.map(v => ({id:v.id, nodes:v.nodes.map(n=>n.target)})), [], `${route} axe violations at ${width}`);

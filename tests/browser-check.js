@@ -5,7 +5,7 @@ const { execFileSync } = require('node:child_process');
 const assert = require('node:assert/strict');
 const bin = process.env.AGENT_BROWSER_BIN || 'agent-browser';
 const origin = process.env.PONDWISE_TEST_URL || 'http://127.0.0.1:8765';
-const env = { ...process.env, AGENT_BROWSER_SESSION: 'pondwise-integration-tests', AGENT_BROWSER_EXECUTABLE_PATH: process.env.AGENT_BROWSER_EXECUTABLE_PATH || '/opt/brave-bin/brave' };
+const env = { ...process.env, AGENT_BROWSER_SESSION: 'pondwise-integration-tests-'+process.pid, AGENT_BROWSER_EXECUTABLE_PATH: process.env.AGENT_BROWSER_EXECUTABLE_PATH || '/opt/brave-bin/brave' };
 function command(...args) { return execFileSync(bin, args, { env, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }); }
 function run(code) { const out = JSON.parse(command('eval', code, '--json')); if (!out.success) throw Error(JSON.stringify(out)); return out.data.result; }
 function check(code, message) { assert.equal(run(code), true, message); console.log('PASS ' + message); }
@@ -17,7 +17,9 @@ const submit = selector => act(`document.querySelector(${JSON.stringify(selector
 try {
   command('open', origin);
   // Each fixture uses a separate named browser and synthetic origin. No operator data is loaded.
-  run(`localStorage.clear()`); command('reload');
+  run(`localStorage.clear();sessionStorage.clear()`); command('reload');
+  act(`{const f=document.querySelector('#account-signup');f.elements.name.value='Test Keeper';f.elements.email.value='keeper@example.test';f.elements.password.value='unique-test-password';f.elements.confirm.value='unique-test-password';f.elements.consent.checked=true;f.requestSubmit();}`);
+  command('wait', '#desktopNav a');
   go('ponds'); set('#pond-create [name=name]', 'Synthetic pond'); submit('#pond-create');
   check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.ponds.length===1`, 'create pond persists typed envelope');
   set('#pond-edit [name=count]', '800'); set('#pond-edit [name=avgWeightG]', '150'); submit('#pond-edit');

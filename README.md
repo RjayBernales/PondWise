@@ -1,6 +1,6 @@
 # PondWise
 
-A local pond notebook built with plain HTML, CSS and JavaScript. No framework, build step, account, payment processor or backend is required.
+A local pond notebook built with plain HTML, CSS and JavaScript. No framework, build step, payment processor or backend is required. A browser-local profile gates the notebook UI; it is not server authentication or an encrypted vault.
 
 ## Run
 
@@ -13,6 +13,14 @@ python3 -m http.server 8000 --bind 127.0.0.1
 Open `http://127.0.0.1:8000`. For deployment, publish the static files together, including `js/` and `assets/`. Use HTTPS. Modern browsers with localStorage, Intl timezones, BigInt, structuredClone, AbortController and crypto.randomUUID are required. Direct `file:` opening has browser-dependent storage behavior and is not the supported persistence workflow.
 
 **Data belongs to the browser and origin.** Changing scheme, hostname or port does not transfer records. PondElite exposes the Backup Data controls needed to download, preview and restore a workspace at a new origin. Nothing synchronizes automatically.
+
+## Signup, Profile and Settings
+
+New visitors see signup before the dashboard. One personal profile is stored per browser/origin; sign-in sessions are tab-local. Password verifiers use PBKDF2-SHA-256 with a random salt and 210,000 iterations. There is no email verification or password recovery. Existing farm data is preserved when a profile is created.
+
+The built-in demo login is **user@gmail.com** / **user123**. Choose **Sign in** from signup. It automatically opens and seeds the separate demo workspace with a tilapia pond, fish stock, feeding, water, task, bought and sold records. Later sign-ins and reloads retain demo edits instead of reseeding. Demo credentials are fixed; demo name and photo are editable. Signing in with a personal profile returns to the farm notebook.
+
+Profile supports a photo (JPEG/PNG/WebP up to 2 MiB, resized locally), name, email, current Free/Pro/Elite plan preview and password changes. Settings includes persistent dark mode, privacy/security information, data management, tier-gated backup/restore, help, a downloadable diagnostic report, app information, terms, privacy policy and logout. Logout retains saved data and in-memory pond drafts in the same tab. Terms and privacy text describe this local prototype and should be reviewed before a public launch.
 
 ## Demo subscription matrix
 
@@ -46,6 +54,7 @@ See [FEATURES.md](FEATURES.md) for the current feature contract. The original `P
 
 - `index.html`: accessible application shell and static script loading.
 - `styles.css`: responsive desktop notebook and compact white/purple mobile UI.
+- `js/account.js`: local signup/sign-in, fixed demo login, profile, password hashing, photo resizing and theme preferences.
 - `app.js`: navigation, view rendering, entry/draft handling and UI events; renders only the active view.
 - `js/domain.js`: versioned schema, migration, dates, feed policy, money, integrity and selectors.
 - `js/storage.js`: verified persistence, recovery snapshots and stale-write checks.
@@ -63,6 +72,7 @@ Node 18+ supports the test harness (a current LTS is recommended):
 node tests/domain.test.js
 node --test tests/*.test.js
 node --check app.js
+node --check js/account.js
 node --check species-data.js
 node --check js/domain.js
 node --check js/storage.js
@@ -91,3 +101,9 @@ node tests/mobile-check.js
 ```
 
 This suite checks 320, 375, 390, 480, 700 and 1440px and writes dashboard/calendar screenshots to `/tmp`. Software-keyboard viewport behavior is simulated; the suite does not need a physical phone. Set `AXE_CORE_PATH` to a local `axe-core/axe.min.js` file to audit all routes at 390 and 1440px as well.
+
+Account browser regression (same server and browser setup as the integration harness):
+
+```sh
+node tests/account-check.js
+```

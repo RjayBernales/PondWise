@@ -4,7 +4,7 @@ This document describes the static notebook implementation and supersedes the or
 
 ## Navigation and daily context
 
-Overview leads with overdue/today work, tier-aware automatic feeding, latest dated water observation, completed-today tasks and recent activity. The active pond is visible on every screen. Mobile navigation has Home, Ponds, a raised Add record action, Tasks and More; Money, Feed, Help & settings and Subscription preview live under More. Legacy hashes remain aliases. Native hash navigation supports bookmarking, Back and Forward, with `aria-current` on selected navigation links.
+Overview leads with overdue/today work, tier-aware automatic feeding, latest dated water observation, completed-today tasks and recent activity. The active pond is visible on every screen. Mobile navigation has Home, Ponds, a raised Add record action, Tasks and More; Money, Feed, Profile, Settings and Subscription preview live under More. Legacy hashes remain aliases. Native hash navigation supports bookmarking, Back and Forward, with `aria-current` on selected navigation links.
 
 Ponds have editable details, a single current stock snapshot and a stock-update timestamp. Archive retains all history and frees an active-pond slot. Trashing a pond retains its entire dependent graph; recovering it is one validated mutation. Individual records and tasks have recoverable trash and immediate Undo. There is no permanent purge.
 
@@ -54,4 +54,8 @@ Tier selection is a local preview, not a paid subscription or security boundary.
 
 Schema v2 uses `schemaVersion`, `revision`, settings and declared collections. Migration previews counts, preserves the untouched legacy key, validates references and refuses ambiguous data. Recovery and replacement restore retain raw originals and a one-level rollback snapshot. Read/write/quota failures are explicit. Drafts survive failed saves. See README for origin transfer, export limits and concurrency limitations.
 
-Intentionally outside this release: accounts, server backend, sync, payment processing, push notifications, merge imports, stock batches/cycles, permanent deletion, encrypted vaults and installable offline delivery. The notebook works with the locally cached page/assets and local species library; no service-worker offline-install guarantee is made.
+Intentionally outside this release: server accounts, server backend, sync, payment processing, push notifications, merge imports, stock batches/cycles, permanent deletion, encrypted vaults and installable offline delivery. The notebook works with the locally cached page/assets and local species library; no service-worker offline-install guarantee is made.
+
+## Browser-local profiles
+
+Signup precedes dashboard access. Profile supports photo, name, email, plan preview and password change. Settings adds persistent light/dark themes, privacy/security information, data management, backup/restore according to tier, help, diagnostic report download, app information, terms, privacy policy and tab-local logout. Existing pond records remain intact. This UI gate is not encryption or server authentication. The static demo credentials `user@gmail.com` / `user123` open the separate seeded demo notebook automatically and retain later edits. Personal and demo profiles are separate. See README for storage and account limitations.
