@@ -60,16 +60,16 @@ try {
   check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.ponds.length===2 && document.querySelector('#notice').textContent.includes('limit')`, 'downgrade retains over-limit ponds and blocks creation');
   click('#pond-create [data-action=discard]');
   go('tools'); check(`document.querySelector('main').textContent.includes('Feed Estimator') && document.querySelector('main').textContent.includes('Per-pond rations require PondElite')`, 'PondStart keeps manual feed tools and locks pond rations');
-  go('settings'); check(`!document.querySelector('#restoreFile') && document.querySelector('main').textContent.includes('unavailable on PondStart and PondPro')`, 'PondStart has no Backup Data controls'); const farm = run(`localStorage.getItem('pondwise_v2')`); click('[data-action=workspace]');
+  go('settings'); click('[data-tab=data]'); check(`!document.querySelector('#restoreFile') && document.querySelector('main').textContent.includes('unavailable on PondStart and PondPro')`, 'PondStart has no Backup Data controls'); const farm = run(`localStorage.getItem('pondwise_v2')`); click('[data-tab=help]'); click('[data-action=workspace]');
   check(`localStorage.getItem('pondwise_v2')===${JSON.stringify(farm)} && !!localStorage.getItem('pondwise_demo_v2')`, 'demo is isolated from farm data');
   check(`(()=>{const d=JSON.parse(localStorage.getItem('pondwise_demo_v2')).data;return d.ponds.length===1&&d.tasks.length===1&&d.feedLogs.length===1&&d.waterLogs.length===1&&d.expenses.length===1&&d.sales.length===1})()`, 'seeded dashboard demo includes one pond and complete sequence data');
   go('plans'); click('[data-tier=elite]'); check(`localStorage.getItem('pondwise_plan')==='start' && localStorage.getItem('pondwise_demo_plan')==='elite'`, 'demo tier preference is isolated from farm tier');
-  click('#workspaceBanner [data-action=workspace]');
+  go('settings'); click('[data-tab=help]'); click('[data-action=workspace]');
   go('finance'); check(`document.querySelector('h1').textContent==='Money Calculator'`, 'legacy finance hash aliases Money Calculator');
   go('feed'); check(`document.querySelector('h1').textContent==='Feed'`, 'legacy feed hash aliases Feed');
   command('back'); check(`document.querySelector('h1').textContent==='Money Calculator'`, 'browser Back changes visible route');
   command('forward'); check(`document.querySelector('h1').textContent==='Feed'`, 'browser Forward changes visible route');
-  go('settings');
+  go('settings'); click('[data-tab=data]');
   // Simulate a separate tab's event after a persisted conflicting write.
   act(`{const s=JSON.parse(localStorage.getItem('pondwise_v2'));s.revision++;localStorage.setItem('pondwise_v2',JSON.stringify(s));dispatchEvent(new StorageEvent('storage',{key:'pondwise_v2',newValue:JSON.stringify(s)}));}`);
   check(`document.querySelector('#workspaceBanner').textContent.includes('another tab')`, 'cross-tab change pauses saves explicitly');
@@ -91,10 +91,10 @@ try {
   set('#entry-healthLogs [name=note]', 'Planned observation is not allowed'); set('#entry-healthLogs [name=date]', '2099-01-01'); submit('#entry-healthLogs');
   check(`document.querySelector('[name=date]').getAttribute('aria-invalid')==='true' && JSON.parse(localStorage.getItem('pondwise_v2')).data.healthLogs.length===0`, 'future observations rejected in UI');
   click('#entry-healthLogs [data-action=discard]');
-  go('settings'); check(`!document.querySelector('#restoreFile')`, 'PondPro has no Backup Data controls');
+  go('settings'); click('[data-tab=data]'); check(`!document.querySelector('#restoreFile')`, 'PondPro has no Backup Data controls');
   go('tools'); check(`document.querySelector('main').textContent.includes('Per-pond rations require PondElite')`, 'PondPro keeps per-pond rations locked');
   go('plans'); click('[data-tier=elite]'); go('tools'); check(`document.querySelector('main').textContent.includes('kg/day') && !document.querySelector('main').textContent.includes('Per-pond rations require PondElite')`, 'PondElite unlocks per-pond rations');
-  go('settings'); check(`!!document.querySelector('#restoreFile') && !!document.querySelector('[data-action=export]')`, 'PondElite unlocks Backup Data controls');
+  go('settings'); click('[data-tab=data]'); check(`!!document.querySelector('#restoreFile') && !!document.querySelector('[data-action=export]')`, 'PondElite unlocks Backup Data controls');
   function upload(raw) { act(`{ const transfer=new DataTransfer();transfer.items.add(new File([${JSON.stringify(raw)}],'backup.json',{type:'application/json'}));const input=document.querySelector('#restoreFile');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true})); }`); }
   const beforeRestore=run(`localStorage.getItem('pondwise_v2')`);
   upload('{"ponds":[]}');
@@ -116,7 +116,7 @@ try {
   click('[data-action=filter-reset]'); go('tasks');
   click('[data-action=day]'); const selected=run(`document.querySelector('#entry-tasks [name=date]').value`); click('[data-action=month][data-step="1"]');
   check(`document.querySelector('#entry-tasks [name=date]').value===${JSON.stringify(selected)}`, 'calendar month changes preserve selected entry date');
-  click('#entry-tasks [data-action=discard]'); go('settings');
+  click('#entry-tasks [data-action=discard]'); go('settings'); click('[data-tab=data]');
   // Exercise actual migration UI using a synthetic full legacy graph.
   const old=JSON.parse(run(`localStorage.getItem('pondwise_v2')`)).data;
   for(const p of old.ponds){p.size=p.size===null?'':String(p.size);p.stock.count=p.stock.count===null?'':String(p.stock.count);p.stock.avgWeightG=p.stock.avgWeightG===null?'':String(p.stock.avgWeightG);}
@@ -126,7 +126,7 @@ try {
   check(`document.querySelector('#workspaceBanner').textContent.includes('Legacy data found') && localStorage.getItem('pondwise_v2')===null`, 'legacy UI previews migration before writing');
   click('[data-action=migrate]');
   check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.feedLogs.length===28 && localStorage.getItem('pondwise_v1')===${JSON.stringify(legacyRaw)}`, 'migration UI preserves original and all record counts');
-  go('settings');
+  go('settings'); click('[data-tab=data]');
   const recoveryBackup=run(`localStorage.getItem('pondwise_v2')`);
   run(`localStorage.setItem('pondwise_v2','corrupt synthetic JSON')`); command('reload');
   check(`document.querySelector('#workspaceBanner').textContent.includes('Recovery required')`, 'corrupt startup shows recovery, never silent empty state');
@@ -139,7 +139,7 @@ try {
   act(`window.pendingReads[0](${JSON.stringify(recoveryBackup)})`);
   act(`File.prototype.text=window.originalFileText`);click('[data-action=restore]');
   check(`JSON.parse(localStorage.getItem('pondwise_v2')).data.ponds[0].notes==='Latest selected backup'`, 'older file-read response cannot replace newer restore selection');
-  go('settings'); set('#question', 'latest water'); submit('#helper'); check(`document.querySelector('#helperAnswer').textContent.includes('Context: '+document.querySelector('#pondContext option:checked').textContent)`, 'Helper answers within the selected pond context');
+  go('helper'); check(`document.querySelector('.chat-pond').textContent===document.querySelector('#pondContext option:checked').textContent && !!document.querySelector('.chat-composer')`, 'Helper opens a conversation for the selected pond');
   go('ponds'); act(`window.confirm=()=>true`); click('[data-action=clear-stock]'); check(`(()=>{const d=JSON.parse(localStorage.getItem('pondwise_v2')).data,p=d.ponds.find(x=>x.id===d.activePondId);return p.stock.common===''&&p.stock.count===null&&p.stock.avgWeightG===null})()`, 'fish stock can be explicitly removed without deleting the pond');
   // Viewport matrix checks every operational screen with saved data.
   const routes = ['overview','ponds','tasks','records','money','tools','settings','plans','more'];

@@ -35,11 +35,11 @@ try {
   check(`document.querySelector('#account-password .account-error').textContent.includes('incorrect')`,'password change verifies old password');
   submit('account-password',{current:'unique-test-password'});
   check(`document.querySelector('#notice').textContent.includes('Password changed')`,'password change succeeds');
-  go('settings');
+  go('settings'); act(`document.querySelector('[data-tab=data]').click()`);
   check(`document.querySelector('main').textContent.includes('Backup download and restore are unavailable')`,'Free tier backup stays gated');
-  act(`document.querySelector('[data-account-action=theme]').click()`); command('reload');
+  act(`document.querySelector('[data-tab=appearance]').click();document.querySelector('[data-account-action=theme]').click()`); command('reload');
   check(`document.documentElement.dataset.theme==='dark' && document.querySelector('[role=switch]').getAttribute('aria-checked')==='true'`,'dark theme persists after reload');
-  go('plans'); act(`document.querySelector('[data-tier=elite]').click()`); go('settings');
+  go('plans'); act(`document.querySelector('[data-tier=elite]').click()`); go('settings'); act(`document.querySelector('[data-tab=data]').click()`);
   check(`!!document.querySelector('[data-action=export]') && !!document.querySelector('#restoreFile')`,'Elite enables backup and restore');
   for(const width of [320,390,768,1024,1440]) {
     command('set','viewport',String(width),'900');
@@ -47,8 +47,8 @@ try {
   }
   go('profile'); command('screenshot','/tmp/pondwise-profile-desktop.png');
   command('set','viewport','390','844'); command('screenshot','/tmp/pondwise-profile-mobile.png');
-  go('settings'); command('screenshot','/tmp/pondwise-settings-dark-mobile.png');
-  act(`document.querySelector('[data-account-action=logout]').click()`);
+  go('settings'); act(`document.querySelector('[data-tab=data]').click()`); command('screenshot','/tmp/pondwise-settings-dark-mobile.png');
+  act(`document.querySelector('[data-tab=account]').click();document.querySelector('[data-account-action=logout]').click()`);
   check(`!PondAccount.signedIn() && !!document.querySelector('#account-login')`,'logout closes session');
   assert.equal(run(`localStorage.getItem('pondwise_v2')`),notebook,'account changes keep pond data');
   go('ponds'); check(`!!document.querySelector('#account-login')`,'signed-out deep link stays gated');
@@ -57,7 +57,7 @@ try {
   submit('account-login',{password:'replacement-password'}); command('wait','#desktopNav a');
   check(`PondAccount.signedIn()`,'new password signs in');
   go('privacy'); check(`document.querySelector('h1').textContent==='Privacy Policy'`,'privacy policy opens');
-  go('settings'); act(`document.querySelector('[data-account-action=logout]').click()`);
+  go('settings'); act(`document.querySelector('[data-tab=data]').click()`); act(`document.querySelector('[data-tab=account]').click();document.querySelector('[data-account-action=logout]').click()`);
   submit('account-login',{email:'user@gmail.com',password:'wrong-password'});
   check(`!PondAccount.signedIn()`,'demo rejects incorrect password');
   submit('account-login',{password:'user123'}); command('wait','#desktopNav a');
@@ -68,7 +68,7 @@ try {
   command('reload');
   check(`PondAccount.isDemo() && document.querySelector('#workspaceBanner').textContent.includes('Demo workspace')`,'reload opens demo workspace');
   assert.equal(run(`localStorage.getItem('pondwise_demo_v2')`),demoNotebook,'demo reload does not reseed');
-  go('settings');act(`document.querySelector('[data-account-action=logout]').click()`);
+  go('settings'); act(`document.querySelector('[data-tab=data]').click()`);act(`document.querySelector('[data-tab=account]').click();document.querySelector('[data-account-action=logout]').click()`);
   submit('account-login',{email:'updated@example.test',password:'replacement-password'});command('wait','#desktopNav a');go('ponds');
   check(`!PondAccount.isDemo() && document.querySelector('main').textContent.includes('Preserved pond')`,'personal sign-in returns to personal notebook');
   console.log('PASS all account checks');

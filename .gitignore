@@ -1,2 +1,7 @@
 # Generated local design checks and browser profiles.
 .taste-skill/
+
+# Server credentials
+.env
+.env.*
+!.env.example

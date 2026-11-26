@@ -42,11 +42,11 @@ try {
   await page.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
   await sleep(100);assert.equal(await page.eval(()=>document.querySelector('#purchaseDialog').open),false,'Escape closes purchase dialog');
   await page.setViewport({width:375,height:844});await shot('overview-offer-375');
-  assert.equal(await page.eval(()=>{const a=document.querySelector('.plan-offer').getBoundingClientRect(),b=document.querySelector('.mobile-nav').getBoundingClientRect();return a.width>0 && a.height>0 && a.bottom<=b.top;}),true,'offer clears mobile navigation');
+  assert.equal(await page.eval(()=>{const offer=document.querySelector('.plan-offer'),a=offer.getBoundingClientRect();return a.width>0 && a.height>0 && getComputedStyle(offer).position==='relative';}),true,'plan offer stays in document flow');
   await page.eval(()=>document.querySelector('[data-action=offer-close]').click());
   await page.goto((origin)+'/#overview');
   assert.equal(await page.eval(()=>!!document.querySelector('.plan-offer')),false,'offer dismissal persists on reload');
-  const routes=['overview','ponds','tasks','records','money','tools','profile','settings','plans','more'];
+  const routes=['overview','ponds','tasks','records','money','tools','profile','settings','helper','plans','more'];
   for(const theme of ['light','dark']) {
     await page.eval(theme=>document.documentElement.dataset.theme=theme,theme);
     for(const [width,height] of [[320,844],[375,844],[768,1024],[1440,900],[844,390]]) {

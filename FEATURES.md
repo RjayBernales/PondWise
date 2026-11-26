@@ -63,3 +63,7 @@ Signup precedes dashboard access. Profile supports photo, name, email, plan prev
 ## Visual system and plan offer
 
 All routes use one blue, teal and amber system, with local Lucide icons, colored section markers, pond artwork, plan feature cards and light/dark themes. A dismissible dashboard offer opens plan details in a native dialog. Purchase remains an informational entry point until checkout is configured; local tier previews remain separate and never imply a completed purchase. Dismissal persists per workspace, Elite hides the offer, and focused controls are protected from being obscured by it.
+
+## Generative Helper and consistent workspace
+
+Helper is a generative chat backed by Meta Muse Spark 1.3 Contributor through `server.mjs`. It supports free-form, misspelled and mixed-language messages and conversation follow-ups, with separate session histories per pond/workspace. Dashboard and dedicated Helper page share a conversation. No fixed keyword fallback remains. A server-side `MODEL_API_KEY` is required. Only selected pond context is forwarded; profile credentials and cash records are excluded. Settings has five categories with consistent navigation. Secondary explanations use click-only information popovers; important statuses and form errors remain visible. Desktop and mobile use one dashboard. Demo/sample labels are absent from the interface; underlying data separation remains.

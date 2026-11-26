@@ -1,16 +1,16 @@
 # PondWise
 
-A local pond notebook built with plain HTML, CSS and JavaScript. No framework, build step, payment processor or backend is required. A browser-local profile gates the notebook UI; it is not server authentication or an encrypted vault.
+A local pond notebook built with plain HTML, CSS and JavaScript. No framework or build step is required. A small Node server connects the generative AI Helper to Meta. A browser-local profile gates the notebook UI; it is not server authentication or an encrypted vault.
 
 ## Run
 
 Serve this directory from a stable HTTP(S) origin. For development:
 
 ```sh
-python3 -m http.server 8000 --bind 127.0.0.1
+node --env-file-if-exists=.env server.mjs
 ```
 
-Open `http://127.0.0.1:8000`. For deployment, publish the static files together, including `js/` and `assets/`. Use HTTPS. Modern browsers with localStorage, Intl timezones, BigInt, structuredClone, AbortController and crypto.randomUUID are required. Direct `file:` opening has browser-dependent storage behavior and is not the supported persistence workflow.
+Open `http://127.0.0.1:8000`. Set `MODEL_API_KEY` in `.env` to enable Helper (see Generative Helper below). For hosting, serve the static assets and `/api/chat` together with server authentication and HTTPS. Modern browsers with localStorage, Intl timezones, BigInt, structuredClone, AbortController and crypto.randomUUID are required. Direct `file:` opening has browser-dependent storage behavior and is not the supported persistence workflow.
 
 **Data belongs to the browser and origin.** Changing scheme, hostname or port does not transfer records. PondElite exposes the Backup Data controls needed to download, preview and restore a workspace at a new origin. Nothing synchronizes automatically.
 
@@ -112,7 +112,7 @@ node tests/account-check.js
 
 ## Plan offer and visual checks
 
-The dashboard shows a dismissible Elite offer for Free and Pro previews. Closing it persists for the current browser workspace. Purchase buttons open an accessible native dialog with plan details and an optional local preview; **checkout is not connected and no payment is collected**. Elite previews do not show the offer. No prices, discounts or billing claims are implied.
+The dashboard shows a dismissible inline Elite offer for Free and Pro previews. Closing it persists for the current browser workspace. Purchase buttons open an accessible native dialog with plan details and an optional local preview; **checkout is not connected and no payment is collected**. Elite previews do not show the offer. No prices, discounts or billing claims are implied.
 
 The visual regression harness uses the taste skill’s zero-dependency headless Chrome helper. It starts its own temporary local server by default, checks routes in both themes and multiple viewport sizes, and writes screenshots under `/tmp/pondwise-refinements`. Point `PONDWISE_CDP_MODULE` at `design-taste-frontend/scripts/lib/cdp.mjs` and `CHROME_PATH` at your Chromium executable:
 
@@ -120,3 +120,30 @@ The visual regression harness uses the taste skill’s zero-dependency headless 
 PONDWISE_CDP_MODULE=/path/to/design-taste-frontend/scripts/lib/cdp.mjs \
 CHROME_PATH=/path/to/chromium node tests/refinement-check.mjs
 ```
+
+## Generative Helper and workspace redesign
+
+The dashboard and dedicated `#helper` page share a natural-language conversation per pond and workspace. The fixed keyword responder has been removed. Helper uses Meta `muse-spark-1.3-contributor`, understands messy text and follow-ups, and receives the selected pond's stock plus recent water, feed, health and task records. Account credentials and financial records are excluded. Contributor mode allows Meta to use submitted content for model training; see [Meta's pricing modes](https://dev.meta.ai/docs/pricing-rate-limits). The information panel and privacy page explain this.
+
+To enable actual generation, create a `.env` file using `.env.example` and set `MODEL_API_KEY` to a Meta Model API key. Do not put the key into browser code or commit it. Start the app with Node 22+:
+
+```sh
+node --env-file=.env server.mjs
+```
+
+Open `http://127.0.0.1:8000`. Without a key, the app still opens, but Helper shows a connection error and never substitutes canned answers. A plain static server cannot serve `/api/chat`. The included server binds to loopback for local use; an internet deployment needs server authentication and HTTPS rather than relying on the browser-local profile as API authentication.
+
+Conversations are stored in the current tab's session storage, separately from pond records. New chat clears the selected conversation; signing out clears chat histories in that tab. Dashboard and Helper keep the same history. Switching ponds preserves separate histories. Only the most recent 24 messages are sent with each request. Chat errors support retry, and an in-progress response can be stopped.
+
+Settings now has Appearance, Farm preferences, Account & security, Data & backup, and Help & about categories. Secondary explanations are opened with click-only information buttons. Labels, units, validation errors, storage failures, and restore confirmations stay visible. `workspace.css` defines the responsive workspace, light/dark styling and reduced-motion behavior. The upgrade panel is inline to avoid covering app controls. Workspace isolation remains unchanged; demo/sample labels have been removed from the interface.
+
+Additional checks:
+
+```sh
+node --test tests/chat.test.mjs
+CHROME_PATH=/path/to/chromium \
+PONDWISE_CDP_MODULE=/path/to/design-taste-frontend/scripts/lib/cdp.mjs \
+node tests/workspace-check.mjs
+```
+
+The server tests use simulated provider responses to verify the Meta request, field allowlist, follow-ups, provider errors, invalid requests and server file isolation. The workspace browser suite checks the simulated generation flow, history continuity, information popovers, all Settings categories, both themes and responsive routes. Live provider quality requires a configured key and should be checked with real conversations before hosting.
