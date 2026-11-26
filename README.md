@@ -165,3 +165,5 @@ Worker health is available at `/health`; it reports only whether the key is conf
 Run `node --test tests/worker.test.mjs` for the origin/preflight, rate limits, validation, provider failures and secret-exclusion checks. Cloudflare deployment itself requires authorization to the intended account.
 
 Deployed AI endpoint: `https://pondwise-helper.ond-ise.workers.dev/api/chat`. The frontend selects it automatically on GitHub Pages; the API key is a Cloudflare secret, not a repository value.
+
+The Plans screen shows illustrative prices of ₱199/month for PondPro and ₱499/month for PondElite. PondStart has no price shown. The same prices appear in plan details; choosing a plan does not collect payment.
