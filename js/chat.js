@@ -30,7 +30,7 @@
     if (!retry) t.messages.push({role:'user',content:text.trim().slice(0,6000)});
     t.draft=''; t.error=''; t.pending=true; t.controller=new AbortController(); persist(key,t); paint();
     try {
-      const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:t.messages.slice(-24),context:options.context}),signal:AbortSignal.any([t.controller.signal,AbortSignal.timeout(65000)])});
+      const response=await fetch(window.PONDWISE_CONFIG?.chatEndpoint || '/api/chat',{method:'POST',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:t.messages.slice(-24),context:options.context}),signal:AbortSignal.any([t.controller.signal,AbortSignal.timeout(65000)])});
       const result=await response.json().catch(()=>({error:'Helper is unavailable. Please contact your app maintainer.'}));
       if(!response.ok || !result.answer) throw Error(result.error || 'Helper could not answer. Try again.');
       t.messages.push({role:'assistant',content:result.answer}); persist(key,t);

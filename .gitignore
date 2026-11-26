@@ -5,3 +5,9 @@
 .env
 .env.*
 !.env.example
+
+# Cloudflare local state and credentials
+.wrangler/
+.dev.vars
+.dev.vars.*
+node_modules/

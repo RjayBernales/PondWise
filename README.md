@@ -147,3 +147,21 @@ node tests/workspace-check.mjs
 ```
 
 The server tests use simulated provider responses to verify the Meta request, field allowlist, follow-ups, provider errors, invalid requests and server file isolation. The workspace browser suite checks the simulated generation flow, history continuity, information popovers, all Settings categories, both themes and responsive routes. Live provider quality requires a configured key and should be checked with real conversations before hosting.
+
+## GitHub Pages with Cloudflare AI
+
+GitHub Pages serves the notebook. `cloudflare/worker.mjs` serves `/api/chat` on Cloudflare and imports the same AI policy/validation as the local Node server. This keeps the Meta key out of Pages and browser JavaScript. The Worker does not publish the repository or static files.
+
+1. Authorize Cloudflare: `npx wrangler login`.
+2. Deploy the backend from this directory: `npx wrangler deploy`.
+3. Add the Meta key privately: `npx wrangler secret put MODEL_API_KEY`. Enter only the key when prompted; do not commit `.env` or put the key in `wrangler.jsonc`.
+4. Set `chatEndpoint` in `js/config.js` to the deployment URL followed by `/api/chat`, for example `https://pondwise-helper.<account-subdomain>.workers.dev/api/chat`. This is a public URL, not a secret.
+5. Commit and push the endpoint configuration to GitHub Pages. The public configuration uses the local `/api/chat` endpoint on localhost and the Worker on the hosted site, so local Node use keeps working. Other browser origins need explicit allowance in `ALLOWED_ORIGINS`.
+
+The allowed browser origin is `https://rjaybernales.github.io` (the origin has no `/PondWise/` path). A custom domain must be added explicitly. Preflight requests are supported, arbitrary browser origins are rejected, request bodies are bounded, and platform rate-limit bindings apply per client and per site. Limits are approximate per Cloudflare location; CORS and limits are not server authentication. The public prototype has no server accounts. The Meta key never appears in responses or client configuration.
+
+Worker health is available at `/health`; it reports only whether the key is configured. Request/response bodies are not logged by application code. Cloudflare credentials, `.dev.vars`, `.wrangler/` state and `.env` stay ignored by Git. See [Cloudflare secrets](https://developers.cloudflare.com/workers/configuration/secrets/) and [rate-limit binding behavior](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
+
+Run `node --test tests/worker.test.mjs` for the origin/preflight, rate limits, validation, provider failures and secret-exclusion checks. Cloudflare deployment itself requires authorization to the intended account.
+
+Deployed AI endpoint: `https://pondwise-helper.ond-ise.workers.dev/api/chat`. The frontend selects it automatically on GitHub Pages; the API key is a Cloudflare secret, not a repository value.

@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pondwise-helper",
+  "main": "cloudflare/worker.mjs",
+  "compatibility_date": "2026-11-26",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "ALLOWED_ORIGINS": "https://rjaybernales.github.io",
+    "PONDWISE_AI_MODEL": "muse-spark-1.3-contributor"
+  },
+  "ratelimits": [
+    {"name": "CHAT_RATE_LIMITER", "namespace_id": "1101", "simple": {"limit": 15, "period": 60}},
+    {"name": "SITE_RATE_LIMITER", "namespace_id": "1102", "simple": {"limit": 100, "period": 60}}
+  ]
+}
