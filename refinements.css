@@ -105,6 +105,8 @@ td,th { border-color:var(--line); }
 .more-card:nth-child(2n) .feature-icon { background:var(--tint-teal); color:var(--tone-teal); }
 .feature-icon { display:inline-grid; place-items:center; flex-shrink:0; width:48px; height:48px; border-radius:14px; background:var(--tint-blue); color:var(--tone-blue); }
 .plan-card { display:flex; flex-direction:column; border-top:3px solid var(--tone-blue); }
+.plan-grid { align-items:stretch; }
+.plan-grid > .plan-card { height:100%; }
 .plan-pro { border-top-color:var(--tone-teal); }
 .plan-elite { border-top-color:var(--tone-amber); }
 .plan-card.plan-selected { outline:2px solid var(--blue); outline-offset:2px; }
