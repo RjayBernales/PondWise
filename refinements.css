@@ -24,7 +24,8 @@ input,select,textarea { border-color:var(--line); border-radius:10px; background
 input:focus,select:focus,textarea:focus { border-color:var(--blue); }
 .sidebar { padding:32px 16px 24px; background:var(--navy); }
 .sidebar .brand { padding:0 8px; gap:12px; }
-.sidebar .brand img { background:#fff; border-radius:12px; padding:4px; }
+/* The supplied square photo has generous white margins around its wordmark. */
+.brand img { display:block; width:240px; max-width:100%; height:auto; aspect-ratio:5 / 2; object-fit:cover; object-position:center; border-radius:8px; }
 .sidebar-note { margin-bottom:32px; font-size:13px; }
 .sidebar nav a { display:flex; align-items:center; gap:12px; font-size:14px; font-weight:500; }
 .sidebar nav a .icon { width:20px; height:20px; opacity:.8; }
